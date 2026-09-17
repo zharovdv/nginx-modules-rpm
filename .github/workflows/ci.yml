@@ -9,14 +9,16 @@ on:
   workflow_dispatch:
     inputs:
       nginx_repo:
+        description: Repository channel matching the selected pkg-oss ref
         type: choice
         required: true
-        default: stable
+        default: mainline
         options: [stable, mainline]
       nginx_version:
+        description: Use auto or the exact version packaged by pkg-oss
         type: string
         required: true
-        default: latest
+        default: auto
       pkg_oss_ref:
         description: Discovery ref; this workflow never publishes
         type: string
@@ -39,32 +41,65 @@ jobs:
       BUILDER_IMAGE: nginx-modules-rpm-builder:rl9
       DOCKER_PLATFORM: linux/amd64
       MODULE: "${{ matrix.module }}"
-      NGINX_REPO: "${{ github.event_name == 'workflow_dispatch' && inputs.nginx_repo || 'stable' }}"
-      NGINX_VERSION: "${{ github.event_name == 'workflow_dispatch' && inputs.nginx_version || 'latest' }}"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Load reviewed repository pins
         if: github.event_name == 'pull_request' || github.event_name == 'push'
         run: |
           set -Eeuo pipefail
           grep -E '^(PKG_OSS_CI_COMMIT|NCHAN_CI_COMMIT|GEOIP2_CI_COMMIT)=[0-9a-f]{40}$' pins.env >>"$GITHUB_ENV"
-      - name: Select build inputs
-        run: |
-          set -Eeuo pipefail
-          if [[ "$GITHUB_EVENT_NAME" == schedule || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            echo 'MODULE_REF=latest-stable' >>"$GITHUB_ENV"
-            echo "PKG_OSS_REF=${{ inputs.pkg_oss_ref || 'master' }}" >>"$GITHUB_ENV"
-          else
-            [[ "$MODULE" == nchan ]] && module_ref="$NCHAN_CI_COMMIT" || module_ref="$GEOIP2_CI_COMMIT"
-            echo "MODULE_REF=$module_ref" >>"$GITHUB_ENV"
-            echo "PKG_OSS_REF=$PKG_OSS_CI_COMMIT" >>"$GITHUB_ENV"
-          fi
-      - name: Validate pinned CI inputs
+          grep -E '^NGINX_STABLE_CI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' pins.env >>"$GITHUB_ENV"
+
+      - name: Select reviewed CI inputs
         if: github.event_name == 'pull_request' || github.event_name == 'push'
         run: |
           set -Eeuo pipefail
-          [[ "$MODULE_REF" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$PKG_OSS_REF" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$MODULE" == nchan ]]; then
+            module_ref="$NCHAN_CI_COMMIT"
+          else
+            module_ref="$GEOIP2_CI_COMMIT"
+          fi
+          {
+            echo "MODULE_REF=$module_ref"
+            echo 'NGINX_REPO=stable'
+            echo "NGINX_VERSION=$NGINX_STABLE_CI_VERSION"
+            echo "PKG_OSS_REF=$PKG_OSS_CI_COMMIT"
+          } >>"$GITHUB_ENV"
+
+      - name: Select scheduled discovery inputs
+        if: github.event_name == 'schedule'
+        run: |
+          set -Eeuo pipefail
+          {
+            echo 'MODULE_REF=latest-stable'
+            echo 'NGINX_REPO=mainline'
+            echo 'NGINX_VERSION=auto'
+            echo 'PKG_OSS_REF=master'
+          } >>"$GITHUB_ENV"
+
+      - name: Select manual discovery inputs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -Eeuo pipefail
+          {
+            echo 'MODULE_REF=latest-stable'
+            echo 'NGINX_REPO=${{ inputs.nginx_repo }}'
+            echo 'NGINX_VERSION=${{ inputs.nginx_version }}'
+            echo 'PKG_OSS_REF=${{ inputs.pkg_oss_ref }}'
+          } >>"$GITHUB_ENV"
+
+      - name: Validate selected inputs
+        run: |
+          set -Eeuo pipefail
+          [[ "$MODULE_REF" == latest-stable || "$MODULE_REF" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$NGINX_REPO" == stable || "$NGINX_REPO" == mainline ]]
+          [[ "$NGINX_VERSION" == auto || "$NGINX_VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]
+          [[ -n "$PKG_OSS_REF" ]]
+          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == push ]]; then
+            [[ "$PKG_OSS_REF" =~ ^[0-9a-f]{40}$ ]]
+          fi
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -75,11 +110,13 @@ jobs:
           tags: "${{ env.BUILDER_IMAGE }}"
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
       - name: Build and validate
         run: |
           set -Eeuo pipefail
           mkdir -p dist
           HOST_UID="$(id -u)" HOST_GID="$(id -g)" docker compose run --rm builder
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: "unsigned-${{ matrix.module }}-${{ github.sha }}"

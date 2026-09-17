@@ -63,7 +63,7 @@ jobs:
       - name: Validate immutable inputs
         run: |
           set -Eeuo pipefail
-          [[ "$NGINX_VERSION" != latest ]]
+          [[ "$NGINX_VERSION" =~ ^[0-9]+([.][0-9]+){2}$ ]]
           [[ "$MODULE_REF" =~ ^[0-9a-f]{40}$ ]]
           [[ "$PKG_OSS_REF" =~ ^[0-9a-f]{40}$ ]]
           [[ "$MODULE_VERSION" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]
@@ -81,7 +81,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p dist
-          HOST_UID="$(id -u)" HOST_GID="$(id -g)" docker compose run --rm --no-build builder
+          HOST_UID="$(id -u)" HOST_GID="$(id -g)" docker compose run --rm builder
       - name: Sign RPMs
         env:
           RPM_GPG_PRIVATE_KEY: "${{ secrets.RPM_GPG_PRIVATE_KEY }}"

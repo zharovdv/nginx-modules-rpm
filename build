@@ -5,11 +5,11 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 log() { printf '==> %s\n' "$*"; }
 
 MODULE="${MODULE:-nchan}"
-MODULE_REF="${MODULE_REF:-latest}"
+MODULE_REF="${MODULE_REF:-latest-stable}"
 MODULE_VERSION="${MODULE_VERSION:-}"
 NGINX_REPO="${NGINX_REPO:-stable}"
-NGINX_VERSION="${NGINX_VERSION:-latest}"
-PKG_OSS_REF="${PKG_OSS_REF:-master}"
+NGINX_VERSION="${NGINX_VERSION:-auto}"
+PKG_OSS_REF="${PKG_OSS_REF:?PKG_OSS_REF is required}"
 HOST_UID="${HOST_UID:-0}"
 HOST_GID="${HOST_GID:-0}"
 
@@ -18,10 +18,49 @@ module_dir="/workspace/modules/${MODULE}"
 # shellcheck disable=SC1090
 source "${module_dir}/module.env"
 
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+
+log "Resolving nginx/pkg-oss ${PKG_OSS_REF}"
+git clone --filter=blob:none https://github.com/nginx/pkg-oss.git "${work_dir}/pkg-oss"
+git -C "${work_dir}/pkg-oss" checkout --detach "$PKG_OSS_REF"
+pkg_oss_commit="$(git -C "${work_dir}/pkg-oss" rev-parse HEAD)"
+
+pkg_oss_version_file="${work_dir}/pkg-oss/contrib/src/nginx/version"
+[[ -f "$pkg_oss_version_file" ]] || die "pkg-oss Nginx version file not found: ${pkg_oss_version_file}"
+pkg_oss_nginx_version="$(
+    awk -F':=' '$1 ~ /^[[:space:]]*NGINX_VERSION[[:space:]]*$/ { gsub(/[[:space:]]/, "", $2); print $2 }' \
+        "$pkg_oss_version_file"
+)"
+[[ "$pkg_oss_nginx_version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || \
+    die "Invalid Nginx version in pkg-oss: ${pkg_oss_nginx_version:-missing}"
+
+case "$NGINX_VERSION" in
+    auto) nginx_version_target="$pkg_oss_nginx_version" ;;
+    latest) die 'NGINX_VERSION=latest is not reproducible; use auto or an exact version' ;;
+    *)
+        [[ "$NGINX_VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || \
+            die 'NGINX_VERSION must be auto or an exact x.y.z version'
+        [[ "$NGINX_VERSION" == "$pkg_oss_nginx_version" ]] || \
+            die "Requested Nginx ${NGINX_VERSION}, but pinned pkg-oss ${pkg_oss_commit} packages Nginx ${pkg_oss_nginx_version}"
+        nginx_version_target="$NGINX_VERSION"
+        ;;
+esac
+
+nginx_minor="${nginx_version_target#*.}"
+nginx_minor="${nginx_minor%%.*}"
+if (( nginx_minor % 2 == 0 )); then
+    expected_nginx_repo=stable
+else
+    expected_nginx_repo=mainline
+fi
+[[ "$NGINX_REPO" == "$expected_nginx_repo" ]] || \
+    die "pkg-oss ${pkg_oss_commit} packages Nginx ${nginx_version_target}; use NGINX_REPO=${expected_nginx_repo}, not ${NGINX_REPO}"
+
 case "$NGINX_REPO" in
     stable) nginx_baseurl='https://nginx.org/packages/centos/$releasever/$basearch/' ;;
     mainline) nginx_baseurl='https://nginx.org/packages/mainline/centos/$releasever/$basearch/' ;;
-    *) die "NGINX_REPO must be stable or mainline" ;;
+    *) die 'NGINX_REPO must be stable or mainline' ;;
 esac
 
 cat >/etc/yum.repos.d/nginx.repo <<EOF
@@ -36,44 +75,51 @@ module_hotfixes=true
 EOF
 
 dnf -qy module disable nginx || true
-if [[ "$NGINX_VERSION" == latest ]]; then
-    dnf install -y nginx
-else
-    dnf install -y "nginx-${NGINX_VERSION}*"
-fi
+log "Installing official nginx.org Nginx ${nginx_version_target}"
+dnf install -y "nginx-${nginx_version_target}-*"
 
 nginx_version_resolved="$(nginx -v 2>&1 | sed 's#^nginx version: nginx/##')"
 nginx_package="$(rpm -q nginx)"
+[[ "$nginx_version_resolved" == "$nginx_version_target" ]] || \
+    die "Installed Nginx ${nginx_version_resolved}, expected ${nginx_version_target}"
 nginx_configure="$(nginx -V 2>&1 | sed -n 's/^configure arguments: //p')"
 [[ "$nginx_configure" == *--with-compat* ]] || die 'nginx.org package lacks --with-compat'
-
-work_dir="$(mktemp -d)"
-trap 'rm -rf "$work_dir"' EXIT
 
 log "Resolving ${MODULE_REPOSITORY} ${MODULE_REF}"
 git clone --filter=blob:none --no-checkout "$MODULE_REPOSITORY" "${work_dir}/module"
 git -C "${work_dir}/module" fetch --tags --force
-
 if [[ "$MODULE_REF" == latest || "$MODULE_REF" == latest-stable ]]; then
     resolved_ref="$(git -C "${work_dir}/module" tag --list | grep -E "$MODULE_STABLE_TAG_REGEX" | sort -V | tail -n 1)"
     [[ -n "$resolved_ref" ]] || die "No stable module tag matches ${MODULE_STABLE_TAG_REGEX}"
 else
     resolved_ref="$MODULE_REF"
 fi
-
 git -C "${work_dir}/module" checkout --detach "$resolved_ref"
 git -C "${work_dir}/module" submodule update --init --recursive
 module_commit="$(git -C "${work_dir}/module" rev-parse HEAD)"
-module_version="${MODULE_VERSION:-${resolved_ref#v}}"
-module_version="${module_version//\//.}"
-module_version="${module_version//-/_}"
 
-git clone https://github.com/nginx/pkg-oss.git "${work_dir}/pkg-oss"
-git -C "${work_dir}/pkg-oss" checkout --detach "$PKG_OSS_REF"
-pkg_oss_script_commit="$(git -C "${work_dir}/pkg-oss" rev-parse HEAD)"
+if [[ -n "$MODULE_VERSION" ]]; then
+    module_version="$MODULE_VERSION"
+else
+    module_tag="$(
+        git -C "${work_dir}/module" tag --points-at HEAD \
+            | grep -E "$MODULE_STABLE_TAG_REGEX" \
+            | sort -V \
+            | tail -n 1 \
+            || true
+    )"
+    if [[ -n "$module_tag" ]]; then
+        module_version="${module_tag#v}"
+    else
+        module_version="0.0.0_git.${module_commit:0:12}"
+    fi
+fi
+[[ "$module_version" =~ ^[0-9]+([.][0-9]+){1,2}([._][0-9A-Za-z]+)*$ ]] || \
+    die "Invalid RPM module version: ${module_version}"
 
-# Force build_module.sh to use this exact reviewed pkg-oss checkout. Upstream's
-# script otherwise clones pkg-oss again and may select a moving packaging tag.
+# Force upstream's build script to use the exact reviewed checkout above.
+# Its own clone and version-tag checkout are both replaced; consistency was
+# already verified from contrib/src/nginx/version before Nginx installation.
 cp "${work_dir}/pkg-oss/build_module.sh" "${work_dir}/build_module.sh"
 export PINNED_PKG_OSS_DIR="${work_dir}/pkg-oss"
 python3 - "${work_dir}/build_module.sh" <<'PY'
@@ -81,28 +127,27 @@ from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
-text = path.read_text()
-start = text.index('PKG_OSS_URL="https://github.com/nginx/pkg-oss"')
+source = path.read_text()
+start_marker = 'PKG_OSS_URL="https://github.com/nginx/pkg-oss"'
 end_marker = 'cd pkg-oss/$PACKAGING_DIR'
-end = text.index(end_marker, start)
-path.write_text(text[:start] + 'cp -a "$PINNED_PKG_OSS_DIR" pkg-oss\n\n' + text[end:])
+start = source.index(start_marker)
+end = source.index(end_marker, start)
+path.write_text(source[:start] + 'cp -a "$PINNED_PKG_OSS_DIR" pkg-oss\n\n' + source[end:])
 PY
 chmod 0755 "${work_dir}/build_module.sh"
 
 mkdir -p "${work_dir}/packages"
-log "Building ${MODULE_PACKAGE} for nginx ${nginx_version_resolved}"
+log "Building ${MODULE_PACKAGE} ${module_version} for Nginx ${nginx_version_target}"
 (
     cd "$work_dir"
     "${work_dir}/build_module.sh" \
         -y -s \
         -n "$MODULE_NICKNAME" \
         -V "${module_version}-1" \
-        -v "$nginx_version_resolved" \
+        -v "$nginx_version_target" \
         -o "${work_dir}/packages" \
         "${work_dir}/module"
 )
-
-pkg_oss_packaging_commit="$pkg_oss_script_commit"
 
 mapfile -t candidate_rpms < <(find "${work_dir}/packages" -type f -name '*.rpm' -print | sort)
 [[ "${#candidate_rpms[@]}" -gt 0 ]] || die 'pkg-oss produced no RPM files'
@@ -116,11 +161,16 @@ for rpm_file in "${candidate_rpms[@]}"; do
 done
 [[ -n "$binary_rpm" ]] || die "Could not find ${MODULE_PACKAGE} binary RPM"
 
-nginx_requirement="$(rpm -qp --requires "$binary_rpm" | grep -E '^nginx-r[0-9]+([.][0-9]+)+$' | head -n 1 || true)"
-
-[[ -n "$nginx_requirement" ]] || \
-    die 'Module RPM has no nginx ABI dependency'
-
+nginx_requirement="$(
+    rpm -qp --requires "$binary_rpm" \
+        | grep -E '^nginx-r[0-9]+([.][0-9]+)+$' \
+        | head -n 1 \
+        || true
+)"
+[[ -n "$nginx_requirement" ]] || die 'Module RPM has no Nginx ABI dependency'
+expected_nginx_requirement="nginx-r${nginx_version_target}"
+[[ "$nginx_requirement" == "$expected_nginx_requirement" ]] || \
+    die "Module requires ${nginx_requirement}, expected ${expected_nginx_requirement}"
 rpm -q --provides nginx | grep -Fxq "$nginx_requirement" || \
     die "Installed ${nginx_package} does not provide required ABI ${nginx_requirement}"
 
@@ -133,14 +183,11 @@ load_file="/usr/share/nginx/modules/50-${MODULE_NICKNAME}.conf"
 grep -Fq 'include /usr/share/nginx/modules/*.conf;' /etc/nginx/nginx.conf || \
     die 'Official nginx.conf does not include /usr/share/nginx/modules/*.conf'
 printf 'load_module %s;\n' "$module_path" >"$load_file"
-
 "${module_dir}/smoke-test.sh"
 
-artifact_dir="/dist/${MODULE_PACKAGE}/${nginx_version_resolved}/${module_version}"
-rm -rf "$artifact_dir"
+artifact_dir="/dist/${MODULE_PACKAGE}/${nginx_version_target}/${module_version}"
 mkdir -p "$artifact_dir"
 cp -a "${candidate_rpms[@]}" "$artifact_dir/"
-
 cat >"${artifact_dir}/build-info.txt" <<EOF
 Build timestamp: $(date --utc +'%Y-%m-%dT%H:%M:%SZ')
 Builder OS: Rocky Linux 9
@@ -149,23 +196,23 @@ Module: ${MODULE}
 Module repository: ${MODULE_REPOSITORY}
 Module input ref: ${MODULE_REF}
 Module resolved ref: ${resolved_ref}
+Module version: ${module_version}
 Module commit: ${module_commit}
-pkg-oss build script input ref: ${PKG_OSS_REF}
-pkg-oss build script commit: ${pkg_oss_script_commit}
-pkg-oss packaging commit: ${pkg_oss_packaging_commit}
+pkg-oss input ref: ${PKG_OSS_REF}
+pkg-oss commit: ${pkg_oss_commit}
+pkg-oss packaged nginx version: ${pkg_oss_nginx_version}
 NGINX repository: ${NGINX_REPO}
 NGINX input version: ${NGINX_VERSION}
+NGINX target version: ${nginx_version_target}
 NGINX resolved version: ${nginx_version_resolved}
 NGINX installed package: ${nginx_package}
 NGINX ABI requirement: ${nginx_requirement}
 NGINX configure arguments: ${nginx_configure}
 EOF
-
 (
     cd "$artifact_dir"
     sha256sum ./*.rpm build-info.txt >SHA256SUMS
     sha256sum -c SHA256SUMS
 )
-
 chown -R "${HOST_UID}:${HOST_GID}" "/dist/${MODULE_PACKAGE}"
 log "Artifacts: ${artifact_dir}"

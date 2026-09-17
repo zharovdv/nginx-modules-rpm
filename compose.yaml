@@ -6,11 +6,11 @@ services:
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     environment:
       MODULE: ${MODULE:-nchan}
-      MODULE_REF: ${MODULE_REF:-latest}
+      MODULE_REF: ${MODULE_REF:-latest-stable}
       MODULE_VERSION: ${MODULE_VERSION:-}
       NGINX_REPO: ${NGINX_REPO:-stable}
-      NGINX_VERSION: ${NGINX_VERSION:-latest}
-      PKG_OSS_REF: ${PKG_OSS_REF:-master}
+      NGINX_VERSION: ${NGINX_VERSION:-auto}
+      PKG_OSS_REF: ${PKG_OSS_REF:?PKG_OSS_REF is required}
       HOST_UID: ${HOST_UID:-0}
       HOST_GID: ${HOST_GID:-0}
     volumes:
