@@ -117,7 +117,7 @@ jobs:
           cp packaging/nginx-modules-rpm.repo repository-site/nginx-modules-rpm.repo
 
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@45bfe609374726fd94570f0e5a4c32f41675e823 # v6.0.0
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Upload DNF repository for GitHub Pages
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
@@ -134,4 +134,4 @@ jobs:
     steps:
       - name: Publish DNF repository
         id: deployment
-        uses: actions/deploy-pages@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
