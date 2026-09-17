@@ -117,8 +117,12 @@ done
 [[ -n "$binary_rpm" ]] || die "Could not find ${MODULE_PACKAGE} binary RPM"
 
 nginx_requirement="$(rpm -qp --requires "$binary_rpm" | grep -E '^nginx-r[0-9]+([.][0-9]+)+$' | head -n 1 || true)"
-[[ "$nginx_requirement" == "nginx-r${nginx_version_resolved}" ]] || \
-    die "Unexpected nginx ABI dependency: ${nginx_requirement:-missing}"
+
+[[ -n "$nginx_requirement" ]] || \
+    die 'Module RPM has no nginx ABI dependency'
+
+rpm -q --provides nginx | grep -Fxq "$nginx_requirement" || \
+    die "Installed ${nginx_package} does not provide required ABI ${nginx_requirement}"
 
 dnf install -y "$binary_rpm"
 module_path="$(rpm -qlp "$binary_rpm" | grep "/${MODULE_SO}$" | head -n 1)"
