@@ -3,7 +3,7 @@ FROM rockylinux:9@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed689288965
 RUN dnf install -y dnf-plugins-core epel-release \
     && dnf config-manager --set-enabled crb \
     && dnf install -y \
-        bash ca-certificates curl findutils gcc gcc-c++ geolite2-country git gnupg2 gzip libmaxminddb-devel \
+        bash ca-certificates findutils gcc gcc-c++ geolite2-country git gnupg2 gzip libmaxminddb-devel \
         libxml2 libxslt make openssl-devel patch pcre-devel pcre2-devel \
         python3 rpm-build rpmdevtools rpm-sign tar unzip which xz zlib-devel \
     && dnf clean all
