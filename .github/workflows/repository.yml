@@ -1,0 +1,137 @@
+name: Publish DNF repository
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  pages: write
+
+concurrency:
+  group: publish-dnf-repository
+  cancel-in-progress: false
+
+jobs:
+  build-repository:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    env:
+      BUILDER_IMAGE: nginx-modules-rpm-builder:rl9
+      DOCKER_PLATFORM: linux/amd64
+      PUBLIC_KEY_PATH: keys/RPM-GPG-KEY-nginx-modules-rpm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Load reviewed signing-key fingerprint
+        run: |
+          set -Eeuo pipefail
+
+          fingerprint="$(sed -n 's/^RPM_GPG_FINGERPRINT=//p' pins.env)"
+          fingerprint="${fingerprint^^}"
+
+          if [[ ! "$fingerprint" =~ ^[0-9A-F]{40}$ ]]; then
+              printf "Invalid RPM_GPG_FINGERPRINT in pins.env; expected the full 40-character fingerprint\n" >&2
+              exit 1
+          fi
+
+          echo "RPM_GPG_FINGERPRINT=$fingerprint" >>"$GITHUB_ENV"
+
+      - name: Validate public signing key
+        run: |
+          set -Eeuo pipefail
+
+          [[ -s "$PUBLIC_KEY_PATH" ]]
+          mapfile -t public_key_fingerprints < <(
+              gpg --batch --with-colons --show-keys --fingerprint "$PUBLIC_KEY_PATH" |
+                  awk -F: '$1 == "fpr" { print toupper($10) }'
+          )
+          printf "%s\n" "${public_key_fingerprints[@]}" | grep -Fxq "$RPM_GPG_FINGERPRINT"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          pull: true
+          platforms: "${{ env.DOCKER_PLATFORM }}"
+          tags: "${{ env.BUILDER_IMAGE }}"
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Download all released RPMs
+        env:
+          GH_TOKEN: "${{ github.token }}"
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf repository-site release-rpms
+          mkdir -p repository-site/el9/x86_64/Packages release-rpms
+
+          mapfile -t release_tags < <(
+              gh release list --limit 1000 --json tagName,isDraft \
+                  --jq '.[] | select(.isDraft == false) | .tagName'
+          )
+          [[ "${#release_tags[@]}" -gt 0 ]]
+
+          for tag in "${release_tags[@]}"; do
+              download_directory="release-rpms/${tag}"
+              mkdir -p "$download_directory"
+              gh release download "$tag" --pattern '*.rpm' --dir "$download_directory"
+
+              while IFS= read -r rpm_file; do
+                  destination="repository-site/el9/x86_64/Packages/$(basename "$rpm_file")"
+                  if [[ -e "$destination" ]]; then
+                      cmp --silent "$rpm_file" "$destination" || {
+                          printf "Conflicting release assets have the same filename: %s\n" "$(basename "$rpm_file")" >&2
+                          exit 1
+                      }
+                  else
+                      cp "$rpm_file" "$destination"
+                  fi
+              done < <(find "$download_directory" -maxdepth 1 -type f -name '*.rpm' -print | sort)
+          done
+
+      - name: Create and sign DNF repository metadata
+        env:
+          RPM_GPG_PRIVATE_KEY: "${{ secrets.RPM_GPG_PRIVATE_KEY }}"
+          RPM_GPG_KEY_ID: "${{ vars.RPM_GPG_KEY_ID }}"
+        run: |
+          set -Eeuo pipefail
+
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            --volume "${PWD}/repository-site:/repository" \
+            --env RPM_GPG_PRIVATE_KEY \
+            --env RPM_GPG_KEY_ID \
+            --env RPM_GPG_FINGERPRINT \
+            --env RPM_REPOSITORY_DIRECTORY=/repository/el9/x86_64 \
+            --entrypoint /usr/local/bin/create-nginx-modules-repository \
+            "$BUILDER_IMAGE"
+
+          cp "$PUBLIC_KEY_PATH" repository-site/RPM-GPG-KEY-nginx-modules-rpm
+          cp packaging/index.html repository-site/index.html
+          cp packaging/nginx-modules-rpm.repo repository-site/nginx-modules-rpm.repo
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe609374726fd94570f0e5a4c32f41675e823 # v6.0.0
+
+      - name: Upload DNF repository for GitHub Pages
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: repository-site
+
+  deploy-repository:
+    needs: build-repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: "${{ steps.deployment.outputs.page_url }}"
+    steps:
+      - name: Publish DNF repository
+        id: deployment
+        uses: actions/deploy-pages@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

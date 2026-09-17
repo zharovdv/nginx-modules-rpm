@@ -17,6 +17,11 @@ indent_style = space
 indent_size = 4
 shell_variant = bash
 
+[create-repository]
+indent_style = space
+indent_size = 4
+shell_variant = bash
+
 [*.sh]
 indent_style = space
 indent_size = 4

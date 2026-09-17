@@ -5,16 +5,18 @@ RUN dnf install -y dnf-plugins-core epel-release \
     && dnf install -y \
         bash ca-certificates findutils gcc gcc-c++ geolite2-country git gnupg2 gzip libmaxminddb-devel \
         libxml2 libxslt make openssl-devel patch pcre-devel pcre2-devel \
-        python3 rpm-build rpmdevtools rpm-sign tar unzip which xz zlib-devel \
+        createrepo_c python3 rpm-build rpmdevtools rpm-sign tar unzip which xz zlib-devel \
     && dnf clean all
 
 WORKDIR /workspace
 COPY build /usr/local/bin/build-nginx-module
+COPY create-repository /usr/local/bin/create-nginx-modules-repository
 COPY sign-rpms /usr/local/bin/sign-nginx-module-rpms
 COPY modules /workspace/modules
 
 RUN chmod 0755 \
         /usr/local/bin/build-nginx-module \
+        /usr/local/bin/create-nginx-modules-repository \
         /usr/local/bin/sign-nginx-module-rpms \
         /workspace/modules/*/smoke-test.sh
 

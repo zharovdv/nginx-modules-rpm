@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${RPM_GPG_PRIVATE_KEY:?RPM_GPG_PRIVATE_KEY is required}"
+: "${RPM_GPG_KEY_ID:?RPM_GPG_KEY_ID is required}"
+: "${RPM_GPG_FINGERPRINT:?RPM_GPG_FINGERPRINT is required}"
+: "${RPM_REPOSITORY_DIRECTORY:?RPM_REPOSITORY_DIRECTORY is required}"
+
+expected_fingerprint="${RPM_GPG_FINGERPRINT//[[:space:]]/}"
+expected_fingerprint="${expected_fingerprint^^}"
+[[ "$expected_fingerprint" =~ ^[0-9A-F]{40}$ ]] || {
+    printf "RPM_GPG_FINGERPRINT must be a full 40-character fingerprint\n" >&2
+    exit 1
+}
+
+export GNUPGHOME="$(mktemp -d)"
+trap 'find "$GNUPGHOME" -type f -delete 2>/dev/null || true; rmdir "$GNUPGHOME" 2>/dev/null || true' EXIT
+chmod 0700 "$GNUPGHOME"
+printf "%s" "$RPM_GPG_PRIVATE_KEY" | gpg --batch --import
+
+mapfile -t imported_fingerprints < <(
+    gpg --batch --with-colons --fingerprint --list-secret-keys |
+        awk -F: '$1 == "fpr" { print toupper($10) }'
+)
+printf "%s\n" "${imported_fingerprints[@]}" | grep -Fxq "$expected_fingerprint" || {
+    printf "Imported secret key does not contain expected fingerprint %s\n" "$expected_fingerprint" >&2
+    exit 1
+}
+gpg --batch --with-colons --fingerprint "$RPM_GPG_KEY_ID" |
+    awk -F: '$1 == "fpr" { print toupper($10) }' |
+    grep -Fxq "$expected_fingerprint" || {
+        printf "RPM_GPG_KEY_ID does not select expected fingerprint %s\n" "$expected_fingerprint" >&2
+        exit 1
+    }
+
+public_key_file="${GNUPGHOME}/RPM-GPG-KEY-nginx-modules-rpm"
+gpg --batch --armor --export "$expected_fingerprint" >"$public_key_file"
+rpmkeys --import "$public_key_file"
+
+mapfile -t rpms < <(find "$RPM_REPOSITORY_DIRECTORY/Packages" -maxdepth 1 -type f -name '*.rpm' -print | sort)
+[[ "${#rpms[@]}" -gt 0 ]] || {
+    printf "No RPM packages found in %s/Packages\n" "$RPM_REPOSITORY_DIRECTORY" >&2
+    exit 1
+}
+
+for rpm_file in "${rpms[@]}"; do
+    signature_check="$(rpmkeys --checksig "$rpm_file" 2>&1)" || {
+        printf "%s\n" "$signature_check" >&2
+        exit 1
+    }
+    printf "%s\n" "$signature_check"
+    grep -Eq 'digests signatures OK$' <<<"$signature_check"
+done
+
+rm -rf "${RPM_REPOSITORY_DIRECTORY}/repodata"
+createrepo_c --checksum sha256 "$RPM_REPOSITORY_DIRECTORY"
+gpg --batch --yes --armor --detach-sign \
+    --local-user "$RPM_GPG_KEY_ID" \
+    --output "${RPM_REPOSITORY_DIRECTORY}/repodata/repomd.xml.asc" \
+    "${RPM_REPOSITORY_DIRECTORY}/repodata/repomd.xml"
+gpg --batch --verify \
+    "${RPM_REPOSITORY_DIRECTORY}/repodata/repomd.xml.asc" \
+    "${RPM_REPOSITORY_DIRECTORY}/repodata/repomd.xml"
