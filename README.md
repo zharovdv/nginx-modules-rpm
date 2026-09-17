@@ -46,7 +46,7 @@ Each artifact directory contains RPM files, `build-info.txt`, and `SHA256SUMS`.
 - `release.yml` is manual, uses the protected `release` environment and requires exact module and pkg-oss commit SHA values plus an exact NGINX version;
 - the release workflow signs every RPM, verifies the signing-key fingerprint, emits GitHub build-provenance attestations, serializes identical releases, and refuses to overwrite an existing release.
 
-Configure the protected `release` environment with secret `RPM_GPG_PRIVATE_KEY` and variable `RPM_GPG_KEY_ID`, using a dedicated unencrypted and revocable signing subkey. Commit its full fingerprint as `RPM_GPG_FINGERPRINT` in `pins.env`; the supplied placeholder deliberately makes releases fail closed. Require reviewers for that environment. Moving values such as `master`, `auto`, and `latest-stable` are discovery-only; reviewed CI and releases use exact inputs.
+Configure the protected `release` environment with secret `RPM_GPG_PRIVATE_KEY` and variable `RPM_GPG_KEY_ID`, using a dedicated unencrypted signing key created only for this repository. Commit its full fingerprint as `RPM_GPG_FINGERPRINT` in `pins.env`; the supplied placeholder deliberately makes releases fail closed. The complete creation, backup, GitHub configuration, verification, and rotation procedure is documented in [`docs/signing.md`](docs/signing.md). Require reviewers for that environment when another maintainer is available. Moving values such as `master`, `auto`, and `latest-stable` are discovery-only; reviewed CI and releases use exact inputs.
 
 All external Actions and the Rocky Linux base image are pinned to immutable SHA/digest values. Dependabot is configured to propose their updates as reviewable pull requests.
 
