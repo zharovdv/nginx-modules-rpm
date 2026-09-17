@@ -10,9 +10,14 @@ Do not reuse a personal GPG key.
 
 ## Create the key
 
-Run these commands on a trusted workstation with GnuPG installed. They work in
-Linux, WSL, and Git Bash with Gpg4win. Replace the email address before running
-them.
+Run these commands on a trusted workstation with GnuPG 2.1 or newer installed.
+They work in Linux, WSL, and Git Bash with a current Gpg4win installation.
+Replace the email address before running them. Check the selected executable
+before creating the key:
+
+```bash
+gpg --version
+```
 
 ```bash
 KEY_UID="nginx-modules-rpm release signing <YOUR_EMAIL>"
@@ -67,7 +72,9 @@ example as a KeePassXC attachment. Never commit it, upload it to a release, or
 send it to another person.
 
 The public `RPM-GPG-KEY-nginx-modules-rpm` file is safe to commit and publish.
-Users need it to verify RPM signatures.
+Copy it to `keys/RPM-GPG-KEY-nginx-modules-rpm` in this repository. Users need
+it to verify RPM signatures, and the release workflow attaches it to every
+GitHub release.
 
 GnuPG also creates a revocation certificate below its home directory, normally
 in `~/.gnupg/openpgp-revocs.d/`. Back up the certificate with the private key.

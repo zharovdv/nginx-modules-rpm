@@ -1,0 +1,10 @@
+# Normalize all detected text files to LF in the repository and working tree.
+* text=auto eol=lf
+
+# Binary build artifacts and databases must never be normalized or diffed.
+*.rpm binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.xz binary
+*.mmdb binary

@@ -43,10 +43,10 @@ Each artifact directory contains RPM files, `build-info.txt`, and `SHA256SUMS`.
 - pull requests and pushes load the reviewed NGINX version and 40-character commit SHA values from the committed `pins.env`; related NGINX and pkg-oss pins are visible together in normal PR review;
 - before installation, the builder verifies that the explicit NGINX version matches the version packaged by the pinned pkg-oss commit;
 - scheduled and manual discovery accepts moving refs but has read-only permissions and cannot publish releases;
-- `release.yml` is manual, uses the protected `release` environment and requires exact module and pkg-oss commit SHA values plus an exact NGINX version;
+- `release.yml` is manual, uses the protected `release` environment and releases the selected module from the exact reviewed values in `pins.env`;
 - the release workflow signs every RPM, verifies the signing-key fingerprint, emits GitHub build-provenance attestations, serializes identical releases, and refuses to overwrite an existing release.
 
-Configure the protected `release` environment with secret `RPM_GPG_PRIVATE_KEY` and variable `RPM_GPG_KEY_ID`, using a dedicated unencrypted signing key created only for this repository. Commit its full fingerprint as `RPM_GPG_FINGERPRINT` in `pins.env`; the supplied placeholder deliberately makes releases fail closed. The complete creation, backup, GitHub configuration, verification, and rotation procedure is documented in [`docs/signing.md`](docs/signing.md). Require reviewers for that environment when another maintainer is available. Moving values such as `master`, `auto`, and `latest-stable` are discovery-only; reviewed CI and releases use exact inputs.
+Configure the protected `release` environment with secret `RPM_GPG_PRIVATE_KEY` and variable `RPM_GPG_KEY_ID`, using a dedicated unencrypted signing key created only for this repository. Commit its public key as `keys/RPM-GPG-KEY-nginx-modules-rpm` and its full fingerprint as `RPM_GPG_FINGERPRINT` in `pins.env`; the supplied placeholder deliberately makes releases fail closed. The complete creation, backup, GitHub configuration, verification, and rotation procedure is documented in [`docs/signing.md`](docs/signing.md). Require reviewers for that environment when another maintainer is available. Moving values such as `master`, `auto`, and `latest-stable` are discovery-only; reviewed CI and releases use exact inputs.
 
 All external Actions and the Rocky Linux base image are pinned to immutable SHA/digest values. Dependabot is configured to propose their updates as reviewable pull requests.
 
@@ -70,7 +70,7 @@ Nchan's smoke test starts NGINX, subscribes over SSE, publishes a message, and v
 
 Download the RPM matching the exact output of `nginx -v`, verify its RPM signature and `SHA256SUMS`, and install it with `dnf`. The RPM dependency prevents installation beside an incompatible nginx.org package.
 
-The included Ansible role intentionally performs deployment only; it never builds on the target host. Rename downloaded RPMs to `nginx-module-nchan.rpm` and `nginx-module-geoip2.rpm`, place them below `ansible/roles/nginx_modules/files/nginx-modules/`, put the armored public key at `ansible/roles/nginx_modules/files/RPM-GPG-KEY-nginx-modules`, and run the example playbook. DNF signature checking remains enabled. The role adds idempotent `load_module` directives to the main context of `/etc/nginx/nginx.conf`, because the official nginx.org configuration does not guarantee a module include directory.
+The included Ansible role intentionally performs deployment only; it never builds on the target host. Rename downloaded RPMs to `nginx-module-nchan.rpm` and `nginx-module-geoip2.rpm`, place them below `ansible/roles/nginx_modules/files/nginx-modules/`, put the armored public key at `ansible/roles/nginx_modules/files/RPM-GPG-KEY-nginx-modules-rpm`, and run the example playbook. DNF signature checking remains enabled. The role adds idempotent `load_module` directives to the main context of `/etc/nginx/nginx.conf`, because the official nginx.org configuration does not guarantee a module include directory.
 
 For a public YUM repository, generate and sign repository metadata separately with `createrepo_c`. Never store the private signing key in the repository.
 
