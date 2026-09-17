@@ -1,0 +1,10 @@
+nginx_modules:
+  - nchan
+
+nginx_modules_repository_baseurl: https://zharovdv.github.io/nginx-modules-rpm/el9/$basearch/
+nginx_modules_repository_gpgkey: https://zharovdv.github.io/nginx-modules-rpm/RPM-GPG-KEY-nginx-modules-rpm
+nginx_modules_gpg_fingerprint: 7DEA45C285E8A9F8B1B996C1F689BC5C23D4F6CE
+
+nginx_modules_shared_objects:
+  geoip2: ngx_http_geoip2_module.so
+  nchan: ngx_nchan_module.so
