@@ -111,7 +111,7 @@ jobs:
           GH_TOKEN: "${{ github.token }}"
         run: '! gh release view "$release_tag" >/dev/null 2>&1'
       - name: Attest signed RPM provenance
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-path: "dist/**/*.rpm"
       - name: Publish immutable release
