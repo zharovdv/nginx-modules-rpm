@@ -1,0 +1,17 @@
+FROM rockylinux:9@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6
+
+RUN dnf install -y dnf-plugins-core epel-release \
+    && dnf install -y \
+        bash ca-certificates curl findutils gcc gcc-c++ geolite2-country git gnupg2 gzip libmaxminddb-devel \
+        libxml2 libxslt make openssl-devel patch pcre-devel pcre2-devel \
+        python3 rpm-build rpmdevtools rpm-sign tar unzip which xz zlib-devel \
+    && dnf clean all
+
+WORKDIR /workspace
+COPY build /usr/local/bin/build-nginx-module
+COPY sign-rpms /usr/local/bin/sign-nginx-module-rpms
+COPY modules /workspace/modules
+
+RUN chmod 0755 /usr/local/bin/build-nginx-module /usr/local/bin/sign-nginx-module-rpms /workspace/modules/*/smoke-test.sh
+
+ENTRYPOINT ["/usr/local/bin/build-nginx-module"]

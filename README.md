@@ -1,0 +1,89 @@
+# nginx-modules-rpm
+
+Reproducible EL9 x86_64 RPM builds of third-party dynamic modules for the official nginx.org packages.
+
+Supported modules:
+
+- `nginx-module-geoip2` from `leev/ngx_http_geoip2_module`;
+- `nginx-module-nchan` from `slact/nchan`.
+
+The build uses Rocky Linux 9 and the official `nginx/pkg-oss` tooling. Every package is bound to the nginx.org ABI through `nginx-r<version>`. Nothing is compiled on production servers.
+
+## Local build
+
+Requirements: Docker Engine with Compose v2.
+
+```bash
+make nchan
+make geoip2
+```
+
+Build a particular combination:
+
+```bash
+MODULE=nchan \
+MODULE_REF=v1.3.8 \
+NGINX_REPO=mainline \
+NGINX_VERSION=latest \
+PKG_OSS_REF=master \
+docker compose run --build --rm builder
+```
+
+Artifacts are written below:
+
+```text
+dist/nginx-module-<module>/<nginx-version>/<module-version>/
+```
+
+Each artifact directory contains RPM files, `build-info.txt`, and `SHA256SUMS`.
+
+## GitHub Actions
+
+- `ci.yml` builds and tests both modules on pull requests, pushes and daily discovery runs;
+- pull requests and pushes load reviewed 40-character commit SHA values from the committed `pins.env`; changes are visible in normal PR review and can be protected with CODEOWNERS;
+- scheduled and manual discovery accepts moving refs but has read-only permissions and cannot publish releases;
+- `release.yml` is manual, uses the protected `release` environment and requires exact module and pkg-oss commit SHA values plus an exact Nginx version;
+- the release workflow signs every RPM, verifies the signing-key fingerprint, emits GitHub build-provenance attestations, serializes identical releases, and refuses to overwrite an existing release.
+
+Configure the protected `release` environment with secret `RPM_GPG_PRIVATE_KEY` and variable `RPM_GPG_KEY_ID`, using a dedicated unencrypted and revocable signing subkey. Commit its full fingerprint as `RPM_GPG_FINGERPRINT` in `pins.env`; the supplied placeholder deliberately makes releases fail closed. Require reviewers for that environment. `master` and `latest-stable` are discovery-only values.
+
+All external Actions and the Rocky Linux base image are pinned to immutable SHA/digest values. Dependabot is configured to propose their updates as reviewable pull requests.
+
+## Validation
+
+The disposable builder:
+
+1. installs the selected official nginx.org RPM;
+2. verifies that it was built with `--with-compat`;
+3. resolves and records the exact module commit, pkg-oss build-script commit,
+   and the nginx-version-specific pkg-oss packaging commit selected upstream;
+4. builds RPMs with pkg-oss;
+5. checks the exact `nginx-r<version>` requirement;
+6. installs the package;
+7. checks `ldd` for missing libraries;
+8. runs `nginx -t`;
+9. runs a module-specific smoke test.
+
+Nchan's smoke test starts Nginx, subscribes over SSE, publishes a message, and verifies delivery. GeoIP2's test starts Nginx, performs a real HTTP request, and requires the module-backed variable to return its configured `ZZ` default.
+
+## Production installation
+
+Download the RPM matching the exact output of `nginx -v`, verify its RPM signature and `SHA256SUMS`, and install it with `dnf`. The RPM dependency prevents installation beside an incompatible nginx.org package.
+
+The included Ansible role intentionally performs deployment only; it never builds on the target host. Rename downloaded RPMs to `nginx-module-nchan.rpm` and `nginx-module-geoip2.rpm`, place them below `ansible/roles/nginx_modules/files/nginx-modules/`, put the armored public key at `ansible/roles/nginx_modules/files/RPM-GPG-KEY-nginx-modules`, and run the example playbook. DNF signature checking remains enabled. The role also writes the `load_module` files to `/usr/share/nginx/modules/`, which the official nginx.org configuration includes globally.
+
+For a public YUM repository, generate and sign repository metadata separately with `createrepo_c`. Never store the private signing key in the repository.
+
+## Architecture scope
+
+The supported build target is intentionally `linux/amd64` / EL9 x86_64. Add a native ARM64 runner, architecture matrix and separately validated nginx.org aarch64 packages before advertising aarch64 support; do not silently rely on QEMU for production releases.
+
+## Security and provenance
+
+- upstream refs and resolved commits are recorded;
+- pkg-oss is independently pinnable;
+- GitHub releases are immutable by convention;
+- checksums cover RPMs and provenance metadata;
+- release signing should use a protected environment or external signer.
+
+These are unofficial community builds and are not provided or supported by NGINX or the module authors.

@@ -1,0 +1,9 @@
+- name: Install nginx.org dynamic modules
+  hosts: web
+  become: true
+  roles:
+    - role: nginx_modules
+      nginx_modules:
+        - geoip2
+        - nchan
+

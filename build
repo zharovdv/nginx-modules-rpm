@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+log() { printf '==> %s\n' "$*"; }
+
+MODULE="${MODULE:-nchan}"
+MODULE_REF="${MODULE_REF:-latest}"
+MODULE_VERSION="${MODULE_VERSION:-}"
+NGINX_REPO="${NGINX_REPO:-stable}"
+NGINX_VERSION="${NGINX_VERSION:-latest}"
+PKG_OSS_REF="${PKG_OSS_REF:-master}"
+HOST_UID="${HOST_UID:-0}"
+HOST_GID="${HOST_GID:-0}"
+
+module_dir="/workspace/modules/${MODULE}"
+[[ -f "${module_dir}/module.env" ]] || die "Unknown module: ${MODULE}"
+# shellcheck disable=SC1090
+source "${module_dir}/module.env"
+
+case "$NGINX_REPO" in
+    stable) nginx_baseurl='https://nginx.org/packages/centos/$releasever/$basearch/' ;;
+    mainline) nginx_baseurl='https://nginx.org/packages/mainline/centos/$releasever/$basearch/' ;;
+    *) die "NGINX_REPO must be stable or mainline" ;;
+esac
+
+cat >/etc/yum.repos.d/nginx.repo <<EOF
+[nginx]
+name=nginx.org packages
+baseurl=${nginx_baseurl}
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://nginx.org/keys/nginx_signing.key
+module_hotfixes=true
+EOF
+
+dnf -qy module disable nginx || true
+if [[ "$NGINX_VERSION" == latest ]]; then
+    dnf install -y nginx
+else
+    dnf install -y "nginx-${NGINX_VERSION}*"
+fi
+
+nginx_version_resolved="$(nginx -v 2>&1 | sed 's#^nginx version: nginx/##')"
+nginx_package="$(rpm -q nginx)"
+nginx_configure="$(nginx -V 2>&1 | sed -n 's/^configure arguments: //p')"
+[[ "$nginx_configure" == *--with-compat* ]] || die 'nginx.org package lacks --with-compat'
+
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+
+log "Resolving ${MODULE_REPOSITORY} ${MODULE_REF}"
+git clone --filter=blob:none --no-checkout "$MODULE_REPOSITORY" "${work_dir}/module"
+git -C "${work_dir}/module" fetch --tags --force
+
+if [[ "$MODULE_REF" == latest || "$MODULE_REF" == latest-stable ]]; then
+    resolved_ref="$(git -C "${work_dir}/module" tag --list | grep -E "$MODULE_STABLE_TAG_REGEX" | sort -V | tail -n 1)"
+    [[ -n "$resolved_ref" ]] || die "No stable module tag matches ${MODULE_STABLE_TAG_REGEX}"
+else
+    resolved_ref="$MODULE_REF"
+fi
+
+git -C "${work_dir}/module" checkout --detach "$resolved_ref"
+git -C "${work_dir}/module" submodule update --init --recursive
+module_commit="$(git -C "${work_dir}/module" rev-parse HEAD)"
+module_version="${MODULE_VERSION:-${resolved_ref#v}}"
+module_version="${module_version//\//.}"
+module_version="${module_version//-/_}"
+
+git clone https://github.com/nginx/pkg-oss.git "${work_dir}/pkg-oss"
+git -C "${work_dir}/pkg-oss" checkout --detach "$PKG_OSS_REF"
+pkg_oss_script_commit="$(git -C "${work_dir}/pkg-oss" rev-parse HEAD)"
+
+# Force build_module.sh to use this exact reviewed pkg-oss checkout. Upstream's
+# script otherwise clones pkg-oss again and may select a moving packaging tag.
+cp "${work_dir}/pkg-oss/build_module.sh" "${work_dir}/build_module.sh"
+export PINNED_PKG_OSS_DIR="${work_dir}/pkg-oss"
+python3 - "${work_dir}/build_module.sh" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+start = text.index('PKG_OSS_URL="https://github.com/nginx/pkg-oss"')
+end_marker = 'cd pkg-oss/$PACKAGING_DIR'
+end = text.index(end_marker, start)
+path.write_text(text[:start] + 'cp -a "$PINNED_PKG_OSS_DIR" pkg-oss\n\n' + text[end:])
+PY
+chmod 0755 "${work_dir}/build_module.sh"
+
+mkdir -p "${work_dir}/packages"
+log "Building ${MODULE_PACKAGE} for nginx ${nginx_version_resolved}"
+(
+    cd "$work_dir"
+    "${work_dir}/build_module.sh" \
+        -y -s \
+        -n "$MODULE_NICKNAME" \
+        -V "${module_version}-1" \
+        -v "$nginx_version_resolved" \
+        -o "${work_dir}/packages" \
+        "${work_dir}/module"
+)
+
+pkg_oss_packaging_commit="$pkg_oss_script_commit"
+
+mapfile -t candidate_rpms < <(find "${work_dir}/packages" -type f -name '*.rpm' -print | sort)
+[[ "${#candidate_rpms[@]}" -gt 0 ]] || die 'pkg-oss produced no RPM files'
+
+binary_rpm=''
+for rpm_file in "${candidate_rpms[@]}"; do
+    if [[ "$(rpm -qp --queryformat '%{NAME}' "$rpm_file" 2>/dev/null || true)" == "$MODULE_PACKAGE" ]]; then
+        binary_rpm="$rpm_file"
+        break
+    fi
+done
+[[ -n "$binary_rpm" ]] || die "Could not find ${MODULE_PACKAGE} binary RPM"
+
+nginx_requirement="$(rpm -qp --requires "$binary_rpm" | grep -E '^nginx-r[0-9]+([.][0-9]+)+$' | head -n 1 || true)"
+[[ "$nginx_requirement" == "nginx-r${nginx_version_resolved}" ]] || \
+    die "Unexpected nginx ABI dependency: ${nginx_requirement:-missing}"
+
+dnf install -y "$binary_rpm"
+module_path="$(rpm -qlp "$binary_rpm" | grep "/${MODULE_SO}$" | head -n 1)"
+[[ -f "$module_path" ]] || die "Installed module not found: ${MODULE_SO}"
+! ldd "$module_path" | grep -Fq 'not found' || die 'Unresolved shared-library dependency'
+
+load_file="/usr/share/nginx/modules/50-${MODULE_NICKNAME}.conf"
+grep -Fq 'include /usr/share/nginx/modules/*.conf;' /etc/nginx/nginx.conf || \
+    die 'Official nginx.conf does not include /usr/share/nginx/modules/*.conf'
+printf 'load_module %s;\n' "$module_path" >"$load_file"
+
+"${module_dir}/smoke-test.sh"
+
+artifact_dir="/dist/${MODULE_PACKAGE}/${nginx_version_resolved}/${module_version}"
+rm -rf "$artifact_dir"
+mkdir -p "$artifact_dir"
+cp -a "${candidate_rpms[@]}" "$artifact_dir/"
+
+cat >"${artifact_dir}/build-info.txt" <<EOF
+Build timestamp: $(date --utc +'%Y-%m-%dT%H:%M:%SZ')
+Builder OS: Rocky Linux 9
+Architecture: $(uname -m)
+Module: ${MODULE}
+Module repository: ${MODULE_REPOSITORY}
+Module input ref: ${MODULE_REF}
+Module resolved ref: ${resolved_ref}
+Module commit: ${module_commit}
+pkg-oss build script input ref: ${PKG_OSS_REF}
+pkg-oss build script commit: ${pkg_oss_script_commit}
+pkg-oss packaging commit: ${pkg_oss_packaging_commit}
+NGINX repository: ${NGINX_REPO}
+NGINX input version: ${NGINX_VERSION}
+NGINX resolved version: ${nginx_version_resolved}
+NGINX installed package: ${nginx_package}
+NGINX ABI requirement: ${nginx_requirement}
+NGINX configure arguments: ${nginx_configure}
+EOF
+
+(
+    cd "$artifact_dir"
+    sha256sum ./*.rpm build-info.txt >SHA256SUMS
+    sha256sum -c SHA256SUMS
+)
+
+chown -R "${HOST_UID}:${HOST_GID}" "/dist/${MODULE_PACKAGE}"
+log "Artifacts: ${artifact_dir}"

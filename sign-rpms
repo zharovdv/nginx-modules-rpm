@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${RPM_GPG_PRIVATE_KEY:?RPM_GPG_PRIVATE_KEY is required}"
+: "${RPM_GPG_KEY_ID:?RPM_GPG_KEY_ID is required}"
+: "${RPM_GPG_FINGERPRINT:?RPM_GPG_FINGERPRINT is required}"
+: "${RPM_DIRECTORY:?RPM_DIRECTORY is required}"
+
+expected_fingerprint="${RPM_GPG_FINGERPRINT//[[:space:]]/}"
+expected_fingerprint="${expected_fingerprint^^}"
+[[ "$expected_fingerprint" =~ ^[0-9A-F]{40}$ ]] || {
+    printf 'RPM_GPG_FINGERPRINT must be a full 40-character fingerprint\n' >&2
+    exit 1
+}
+
+export GNUPGHOME="$(mktemp -d)"
+trap 'find "$GNUPGHOME" -type f -delete 2>/dev/null || true; rmdir "$GNUPGHOME" 2>/dev/null || true' EXIT
+chmod 0700 "$GNUPGHOME"
+printf '%s' "$RPM_GPG_PRIVATE_KEY" | gpg --batch --import
+
+mapfile -t imported_fingerprints < <(
+    gpg --batch --with-colons --fingerprint --list-secret-keys \
+        | awk -F: '$1 == "fpr" { print toupper($10) }'
+)
+printf '%s\n' "${imported_fingerprints[@]}" | grep -Fxq "$expected_fingerprint" || {
+    printf 'Imported secret key does not contain expected fingerprint %s\n' "$expected_fingerprint" >&2
+    exit 1
+}
+gpg --batch --with-colons --fingerprint "$RPM_GPG_KEY_ID" \
+    | awk -F: '$1 == "fpr" { print toupper($10) }' \
+    | grep -Fxq "$expected_fingerprint" || {
+        printf 'RPM_GPG_KEY_ID does not select expected fingerprint %s\n' "$expected_fingerprint" >&2
+        exit 1
+    }
+
+cat >"${HOME}/.rpmmacros" <<EOF
+%_signature gpg
+%_gpg_name ${RPM_GPG_KEY_ID}
+%_gpg_path ${GNUPGHOME}
+%__gpg /usr/bin/gpg
+EOF
+
+mapfile -t rpms < <(find "$RPM_DIRECTORY" -maxdepth 1 -type f -name '*.rpm' -print | sort)
+[[ "${#rpms[@]}" -gt 0 ]]
+for rpm_file in "${rpms[@]}"; do
+    rpmsign --addsign "$rpm_file"
+    rpm --checksig "$rpm_file" | grep -Eq 'digests signatures OK'
+done
+(
+    cd "$RPM_DIRECTORY"
+    sha256sum ./*.rpm build-info.txt >SHA256SUMS
+)
