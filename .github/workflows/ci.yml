@@ -79,7 +79,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p dist
-          HOST_UID="$(id -u)" HOST_GID="$(id -g)" docker compose run --rm --no-build builder
+          HOST_UID="$(id -u)" HOST_GID="$(id -g)" docker compose run --rm builder
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: "unsigned-${{ matrix.module }}-${{ github.sha }}"
