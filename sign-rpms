@@ -33,6 +33,10 @@ gpg --batch --with-colons --fingerprint "$RPM_GPG_KEY_ID" \
         exit 1
     }
 
+public_key_file="${GNUPGHOME}/RPM-GPG-KEY-nginx-modules-rpm"
+gpg --batch --armor --export "$expected_fingerprint" >"$public_key_file"
+rpmkeys --import "$public_key_file"
+
 cat >"${HOME}/.rpmmacros" <<EOF
 %_signature gpg
 %_gpg_name ${RPM_GPG_KEY_ID}
@@ -44,7 +48,12 @@ mapfile -t rpms < <(find "$RPM_DIRECTORY" -maxdepth 1 -type f -name '*.rpm' -pri
 [[ "${#rpms[@]}" -gt 0 ]]
 for rpm_file in "${rpms[@]}"; do
     rpmsign --addsign "$rpm_file"
-    rpm --checksig "$rpm_file" | grep -Eq 'digests signatures OK'
+    if ! signature_check="$(rpmkeys --checksig "$rpm_file" 2>&1)"; then
+        printf "%s\n" "$signature_check" >&2
+        exit 1
+    fi
+    printf "%s\n" "$signature_check"
+    grep -Eq 'digests signatures OK$' <<<"$signature_check"
 done
 (
     cd "$RPM_DIRECTORY"
