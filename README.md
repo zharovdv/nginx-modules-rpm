@@ -70,7 +70,7 @@ Nchan's smoke test starts NGINX, subscribes over SSE, publishes a message, and v
 
 Download the RPM matching the exact output of `nginx -v`, verify its RPM signature and `SHA256SUMS`, and install it with `dnf`. The RPM dependency prevents installation beside an incompatible nginx.org package.
 
-The included Ansible role intentionally performs deployment only; it never builds on the target host. Rename downloaded RPMs to `nginx-module-nchan.rpm` and `nginx-module-geoip2.rpm`, place them below `ansible/roles/nginx_modules/files/nginx-modules/`, put the armored public key at `ansible/roles/nginx_modules/files/RPM-GPG-KEY-nginx-modules`, and run the example playbook. DNF signature checking remains enabled. The role also writes the `load_module` files to `/usr/share/nginx/modules/`, which the official nginx.org configuration includes globally.
+The included Ansible role intentionally performs deployment only; it never builds on the target host. Rename downloaded RPMs to `nginx-module-nchan.rpm` and `nginx-module-geoip2.rpm`, place them below `ansible/roles/nginx_modules/files/nginx-modules/`, put the armored public key at `ansible/roles/nginx_modules/files/RPM-GPG-KEY-nginx-modules`, and run the example playbook. DNF signature checking remains enabled. The role adds idempotent `load_module` directives to the main context of `/etc/nginx/nginx.conf`, because the official nginx.org configuration does not guarantee a module include directory.
 
 For a public YUM repository, generate and sign repository metadata separately with `createrepo_c`. Never store the private signing key in the repository.
 

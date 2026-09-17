@@ -181,13 +181,11 @@ module_path="$(rpm -qlp "$binary_rpm" | grep "/${MODULE_SO}$" | head -n 1)"
 [[ -f "$module_path" ]] || die "Installed module not found: ${MODULE_SO}"
 ! ldd "$module_path" | grep -Fq "not found" || die "Unresolved shared-library dependency"
 
-load_file="/usr/share/nginx/modules/50-${MODULE_NICKNAME}.conf"
-grep -Fq 'include /usr/share/nginx/modules/*.conf;' /etc/nginx/nginx.conf || \
-    die "Official nginx.conf does not include /usr/share/nginx/modules/*.conf"
-printf "load_module %s;\n" "$module_path" >"$load_file"
+sed -i "1iload_module ${module_path};" /etc/nginx/nginx.conf
 "${module_dir}/smoke-test.sh"
 
 artifact_dir="/dist/${MODULE_PACKAGE}/${nginx_version_target}/${module_version}"
+rm -rf "$artifact_dir"
 mkdir -p "$artifact_dir"
 cp -a "${candidate_rpms[@]}" "$artifact_dir/"
 cat >"${artifact_dir}/build-info.txt" <<EOF

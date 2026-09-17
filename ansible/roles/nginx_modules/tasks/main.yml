@@ -41,13 +41,19 @@
   loop: "{{ nginx_modules }}"
   notify: Validate and reload Nginx
 
+- name: Remove obsolete module include files
+  ansible.builtin.file:
+    path: "/usr/share/nginx/modules/50-{{ item }}.conf"
+    state: absent
+  loop: "{{ nginx_modules }}"
+  notify: Validate and reload Nginx
+
 - name: Enable Nginx modules
-  ansible.builtin.copy:
-    content: "load_module modules/{{ nginx_modules_shared_objects[item] }};\n"
-    dest: "/usr/share/nginx/modules/50-{{ item }}.conf"
-    owner: root
-    group: root
-    mode: "0644"
+  ansible.builtin.lineinfile:
+    path: /etc/nginx/nginx.conf
+    line: "load_module modules/{{ nginx_modules_shared_objects[item] }};"
+    insertbefore: BOF
+    state: present
   loop: "{{ nginx_modules }}"
   notify: Validate and reload Nginx
 
