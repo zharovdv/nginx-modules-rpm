@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-log() { printf '==> %s\n' "$*"; }
+die() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
+log() { printf "==> %s\n" "$*"; }
 
 MODULE="${MODULE:-nchan}"
 MODULE_REF="${MODULE_REF:-latest-stable}"
@@ -27,22 +27,23 @@ git -C "${work_dir}/pkg-oss" checkout --detach "$PKG_OSS_REF"
 pkg_oss_commit="$(git -C "${work_dir}/pkg-oss" rev-parse HEAD)"
 
 pkg_oss_version_file="${work_dir}/pkg-oss/contrib/src/nginx/version"
-[[ -f "$pkg_oss_version_file" ]] || die "pkg-oss Nginx version file not found: ${pkg_oss_version_file}"
+[[ -f "$pkg_oss_version_file" ]] || die "pkg-oss NGINX version file not found: ${pkg_oss_version_file}"
 pkg_oss_nginx_version="$(
     awk -F':=' '$1 ~ /^[[:space:]]*NGINX_VERSION[[:space:]]*$/ { gsub(/[[:space:]]/, "", $2); print $2 }' \
         "$pkg_oss_version_file"
 )"
 [[ "$pkg_oss_nginx_version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || \
-    die "Invalid Nginx version in pkg-oss: ${pkg_oss_nginx_version:-missing}"
+    die "Invalid NGINX version in pkg-oss: ${pkg_oss_nginx_version:-missing}"
 
 case "$NGINX_VERSION" in
     auto) nginx_version_target="$pkg_oss_nginx_version" ;;
-    latest) die 'NGINX_VERSION=latest is not reproducible; use auto or an exact version' ;;
+    latest) die "NGINX_VERSION=latest is not reproducible; use auto or an exact version" ;;
     *)
         [[ "$NGINX_VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || \
-            die 'NGINX_VERSION must be auto or an exact x.y.z version'
+            die "NGINX_VERSION must be auto or an exact x.y.z version"
         [[ "$NGINX_VERSION" == "$pkg_oss_nginx_version" ]] || \
-            die "Requested Nginx ${NGINX_VERSION}, but pinned pkg-oss ${pkg_oss_commit} packages Nginx ${pkg_oss_nginx_version}"
+            die "Requested NGINX ${NGINX_VERSION}, but pinned pkg-oss ${pkg_oss_commit}" \
+                "packages NGINX ${pkg_oss_nginx_version}"
         nginx_version_target="$NGINX_VERSION"
         ;;
 esac
@@ -55,12 +56,13 @@ else
     expected_nginx_repo=mainline
 fi
 [[ "$NGINX_REPO" == "$expected_nginx_repo" ]] || \
-    die "pkg-oss ${pkg_oss_commit} packages Nginx ${nginx_version_target}; use NGINX_REPO=${expected_nginx_repo}, not ${NGINX_REPO}"
+    die "pkg-oss ${pkg_oss_commit} packages NGINX ${nginx_version_target};" \
+        "use NGINX_REPO=${expected_nginx_repo}, not ${NGINX_REPO}"
 
 case "$NGINX_REPO" in
     stable) nginx_baseurl='https://nginx.org/packages/centos/$releasever/$basearch/' ;;
     mainline) nginx_baseurl='https://nginx.org/packages/mainline/centos/$releasever/$basearch/' ;;
-    *) die 'NGINX_REPO must be stable or mainline' ;;
+    *) die "NGINX_REPO must be stable or mainline" ;;
 esac
 
 cat >/etc/yum.repos.d/nginx.repo <<EOF
@@ -75,15 +77,15 @@ module_hotfixes=true
 EOF
 
 dnf -qy module disable nginx || true
-log "Installing official nginx.org Nginx ${nginx_version_target}"
+log "Installing official nginx.org NGINX ${nginx_version_target}"
 dnf install -y "nginx-${nginx_version_target}-*"
 
 nginx_version_resolved="$(nginx -v 2>&1 | sed 's#^nginx version: nginx/##')"
 nginx_package="$(rpm -q nginx)"
 [[ "$nginx_version_resolved" == "$nginx_version_target" ]] || \
-    die "Installed Nginx ${nginx_version_resolved}, expected ${nginx_version_target}"
+    die "Installed NGINX ${nginx_version_resolved}, expected ${nginx_version_target}"
 nginx_configure="$(nginx -V 2>&1 | sed -n 's/^configure arguments: //p')"
-[[ "$nginx_configure" == *--with-compat* ]] || die 'nginx.org package lacks --with-compat'
+[[ "$nginx_configure" == *--with-compat* ]] || die "nginx.org package lacks --with-compat"
 
 log "Resolving ${MODULE_REPOSITORY} ${MODULE_REF}"
 git clone --filter=blob:none --no-checkout "$MODULE_REPOSITORY" "${work_dir}/module"
@@ -119,7 +121,7 @@ fi
 
 # Force upstream's build script to use the exact reviewed checkout above.
 # Its own clone and version-tag checkout are both replaced; consistency was
-# already verified from contrib/src/nginx/version before Nginx installation.
+# already verified from contrib/src/nginx/version before NGINX installation.
 cp "${work_dir}/pkg-oss/build_module.sh" "${work_dir}/build_module.sh"
 export PINNED_PKG_OSS_DIR="${work_dir}/pkg-oss"
 python3 - "${work_dir}/build_module.sh" <<'PY'
@@ -137,7 +139,7 @@ PY
 chmod 0755 "${work_dir}/build_module.sh"
 
 mkdir -p "${work_dir}/packages"
-log "Building ${MODULE_PACKAGE} ${module_version} for Nginx ${nginx_version_target}"
+log "Building ${MODULE_PACKAGE} ${module_version} for NGINX ${nginx_version_target}"
 (
     cd "$work_dir"
     "${work_dir}/build_module.sh" \
@@ -150,7 +152,7 @@ log "Building ${MODULE_PACKAGE} ${module_version} for Nginx ${nginx_version_targ
 )
 
 mapfile -t candidate_rpms < <(find "${work_dir}/packages" -type f -name '*.rpm' -print | sort)
-[[ "${#candidate_rpms[@]}" -gt 0 ]] || die 'pkg-oss produced no RPM files'
+[[ "${#candidate_rpms[@]}" -gt 0 ]] || die "pkg-oss produced no RPM files"
 
 binary_rpm=''
 for rpm_file in "${candidate_rpms[@]}"; do
@@ -167,7 +169,7 @@ nginx_requirement="$(
         | head -n 1 \
         || true
 )"
-[[ -n "$nginx_requirement" ]] || die 'Module RPM has no Nginx ABI dependency'
+[[ -n "$nginx_requirement" ]] || die "Module RPM has no NGINX ABI dependency"
 expected_nginx_requirement="nginx-r${nginx_version_target}"
 [[ "$nginx_requirement" == "$expected_nginx_requirement" ]] || \
     die "Module requires ${nginx_requirement}, expected ${expected_nginx_requirement}"
@@ -177,12 +179,12 @@ rpm -q --provides nginx | grep -Fxq "$nginx_requirement" || \
 dnf install -y "$binary_rpm"
 module_path="$(rpm -qlp "$binary_rpm" | grep "/${MODULE_SO}$" | head -n 1)"
 [[ -f "$module_path" ]] || die "Installed module not found: ${MODULE_SO}"
-! ldd "$module_path" | grep -Fq 'not found' || die 'Unresolved shared-library dependency'
+! ldd "$module_path" | grep -Fq "not found" || die "Unresolved shared-library dependency"
 
 load_file="/usr/share/nginx/modules/50-${MODULE_NICKNAME}.conf"
 grep -Fq 'include /usr/share/nginx/modules/*.conf;' /etc/nginx/nginx.conf || \
-    die 'Official nginx.conf does not include /usr/share/nginx/modules/*.conf'
-printf 'load_module %s;\n' "$module_path" >"$load_file"
+    die "Official nginx.conf does not include /usr/share/nginx/modules/*.conf"
+printf "load_module %s;\n" "$module_path" >"$load_file"
 "${module_dir}/smoke-test.sh"
 
 artifact_dir="/dist/${MODULE_PACKAGE}/${nginx_version_target}/${module_version}"
@@ -200,7 +202,7 @@ Module version: ${module_version}
 Module commit: ${module_commit}
 pkg-oss input ref: ${PKG_OSS_REF}
 pkg-oss commit: ${pkg_oss_commit}
-pkg-oss packaged nginx version: ${pkg_oss_nginx_version}
+pkg-oss packaged NGINX version: ${pkg_oss_nginx_version}
 NGINX repository: ${NGINX_REPO}
 NGINX input version: ${NGINX_VERSION}
 NGINX target version: ${nginx_version_target}

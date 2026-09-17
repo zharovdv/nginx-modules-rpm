@@ -13,6 +13,9 @@ COPY build /usr/local/bin/build-nginx-module
 COPY sign-rpms /usr/local/bin/sign-nginx-module-rpms
 COPY modules /workspace/modules
 
-RUN chmod 0755 /usr/local/bin/build-nginx-module /usr/local/bin/sign-nginx-module-rpms /workspace/modules/*/smoke-test.sh
+RUN chmod 0755 \
+        /usr/local/bin/build-nginx-module \
+        /usr/local/bin/sign-nginx-module-rpms \
+        /workspace/modules/*/smoke-test.sh
 
 ENTRYPOINT ["/usr/local/bin/build-nginx-module"]

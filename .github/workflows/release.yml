@@ -13,7 +13,7 @@ on:
         default: stable
         options: [stable, mainline]
       nginx_version:
-        description: Exact nginx.org version; latest is rejected
+        description: Exact nginx.org NGINX version; latest is rejected
         type: string
         required: true
       module_commit:
@@ -100,11 +100,25 @@ jobs:
         run: |
           set -Eeuo pipefail
           (cd "$artifact_dir" && sha256sum -c SHA256SUMS)
-          binary_rpm="$(find "$artifact_dir" -maxdepth 1 -type f -name "nginx-module-${MODULE}-*.rpm" | sort | head -n 1)"
-          package_nevra="$(docker run --rm -v "${PWD}/${artifact_dir}:/rpm:ro" --entrypoint rpm "$BUILDER_IMAGE" -qp --queryformat '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}' "/rpm/$(basename "$binary_rpm")")"
+          binary_rpm="$(
+            find "$artifact_dir" -maxdepth 1 -type f -name "nginx-module-${MODULE}-*.rpm" |
+              sort |
+              head -n 1
+          )"
+          package_nevra="$(
+            docker run --rm \
+              -v "${PWD}/${artifact_dir}:/rpm:ro" \
+              --entrypoint rpm \
+              "$BUILDER_IMAGE" \
+              -qp \
+              --queryformat '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}' \
+              "/rpm/$(basename "$binary_rpm")"
+          )"
           echo "release_tag=$package_nevra" >>"$GITHUB_ENV"
           cat >"${artifact_dir}/RELEASE_NOTES.md" <<EOF
-          Signed community RPM for ${MODULE}, built from reviewed immutable commits against the official nginx.org EL9 package. See build-info.txt and SHA256SUMS for provenance.
+          Signed community RPM for ${MODULE}, built from reviewed immutable commits
+          against the official nginx.org EL9 package. See build-info.txt and
+          SHA256SUMS for provenance.
           EOF
       - name: Refuse overwrite
         env:

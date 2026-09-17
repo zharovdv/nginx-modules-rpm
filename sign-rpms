@@ -9,27 +9,27 @@ set -Eeuo pipefail
 expected_fingerprint="${RPM_GPG_FINGERPRINT//[[:space:]]/}"
 expected_fingerprint="${expected_fingerprint^^}"
 [[ "$expected_fingerprint" =~ ^[0-9A-F]{40}$ ]] || {
-    printf 'RPM_GPG_FINGERPRINT must be a full 40-character fingerprint\n' >&2
+    printf "RPM_GPG_FINGERPRINT must be a full 40-character fingerprint\n" >&2
     exit 1
 }
 
 export GNUPGHOME="$(mktemp -d)"
 trap 'find "$GNUPGHOME" -type f -delete 2>/dev/null || true; rmdir "$GNUPGHOME" 2>/dev/null || true' EXIT
 chmod 0700 "$GNUPGHOME"
-printf '%s' "$RPM_GPG_PRIVATE_KEY" | gpg --batch --import
+printf "%s" "$RPM_GPG_PRIVATE_KEY" | gpg --batch --import
 
 mapfile -t imported_fingerprints < <(
     gpg --batch --with-colons --fingerprint --list-secret-keys \
         | awk -F: '$1 == "fpr" { print toupper($10) }'
 )
-printf '%s\n' "${imported_fingerprints[@]}" | grep -Fxq "$expected_fingerprint" || {
-    printf 'Imported secret key does not contain expected fingerprint %s\n' "$expected_fingerprint" >&2
+printf "%s\n" "${imported_fingerprints[@]}" | grep -Fxq "$expected_fingerprint" || {
+    printf "Imported secret key does not contain expected fingerprint %s\n" "$expected_fingerprint" >&2
     exit 1
 }
 gpg --batch --with-colons --fingerprint "$RPM_GPG_KEY_ID" \
     | awk -F: '$1 == "fpr" { print toupper($10) }' \
     | grep -Fxq "$expected_fingerprint" || {
-        printf 'RPM_GPG_KEY_ID does not select expected fingerprint %s\n' "$expected_fingerprint" >&2
+        printf "RPM_GPG_KEY_ID does not select expected fingerprint %s\n" "$expected_fingerprint" >&2
         exit 1
     }
 

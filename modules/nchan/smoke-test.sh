@@ -27,14 +27,14 @@ trap 'nginx -s quit >/dev/null 2>&1 || true' EXIT
 subscriber_output="$(mktemp)"
 curl --fail --silent --show-error --no-buffer \
     --max-time 10 \
-    -H 'Accept: text/event-stream' \
-    'http://127.0.0.1:18080/sub?id=smoke' >"$subscriber_output" &
+    -H "Accept: text/event-stream" \
+    "http://127.0.0.1:18080/sub?id=smoke" >"$subscriber_output" &
 subscriber_pid=$!
 
 for _ in {1..50}; do
     if curl --fail --silent --show-error \
-        --data 'nchan-smoke-ok' \
-        'http://127.0.0.1:18080/pub?id=smoke' >/dev/null; then
+        --data "nchan-smoke-ok" \
+        "http://127.0.0.1:18080/pub?id=smoke" >/dev/null; then
         break
     fi
     sleep 0.1
@@ -45,5 +45,4 @@ wait "$subscriber_pid" || {
     [[ "$status" -eq 28 ]] || exit "$status"
 }
 
-grep -Fq 'nchan-smoke-ok' "$subscriber_output"
-
+grep -Fq "nchan-smoke-ok" "$subscriber_output"

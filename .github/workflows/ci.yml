@@ -62,7 +62,7 @@ jobs:
           fi
           {
             echo "MODULE_REF=$module_ref"
-            echo 'NGINX_REPO=stable'
+            echo "NGINX_REPO=stable"
             echo "NGINX_VERSION=$NGINX_STABLE_CI_VERSION"
             echo "PKG_OSS_REF=$PKG_OSS_CI_COMMIT"
           } >>"$GITHUB_ENV"
@@ -72,10 +72,10 @@ jobs:
         run: |
           set -Eeuo pipefail
           {
-            echo 'MODULE_REF=latest-stable'
-            echo 'NGINX_REPO=mainline'
-            echo 'NGINX_VERSION=auto'
-            echo 'PKG_OSS_REF=master'
+            echo "MODULE_REF=latest-stable"
+            echo "NGINX_REPO=mainline"
+            echo "NGINX_VERSION=auto"
+            echo "PKG_OSS_REF=master"
           } >>"$GITHUB_ENV"
 
       - name: Select manual discovery inputs
@@ -83,10 +83,10 @@ jobs:
         run: |
           set -Eeuo pipefail
           {
-            echo 'MODULE_REF=latest-stable'
-            echo 'NGINX_REPO=${{ inputs.nginx_repo }}'
-            echo 'NGINX_VERSION=${{ inputs.nginx_version }}'
-            echo 'PKG_OSS_REF=${{ inputs.pkg_oss_ref }}'
+            echo "MODULE_REF=latest-stable"
+            echo "NGINX_REPO=${{ inputs.nginx_repo }}"
+            echo "NGINX_VERSION=${{ inputs.nginx_version }}"
+            echo "PKG_OSS_REF=${{ inputs.pkg_oss_ref }}"
           } >>"$GITHUB_ENV"
 
       - name: Validate selected inputs

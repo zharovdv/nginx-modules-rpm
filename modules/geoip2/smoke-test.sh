@@ -22,5 +22,5 @@ for _ in {1..30}; do
     sleep 0.2
 done
 
-printf 'Unexpected GeoIP2 health response: %q\n' "${response:-}" >&2
+printf "Unexpected GeoIP2 health response: %q\n" "${response:-}" >&2
 exit 1
