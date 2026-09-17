@@ -113,8 +113,16 @@ jobs:
             "$BUILDER_IMAGE"
 
           cp "$PUBLIC_KEY_PATH" repository-site/RPM-GPG-KEY-nginx-modules-rpm
-          cp packaging/index.html repository-site/index.html
           cp packaging/nginx-modules-rpm.repo repository-site/nginx-modules-rpm.repo
+
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            --volume "${PWD}/repository-site:/repository" \
+            --env RPM_GPG_FINGERPRINT \
+            --env RPM_REPOSITORY_DIRECTORY=/repository/el9/x86_64 \
+            --env REPOSITORY_INDEX_PATH=/repository/index.html \
+            --entrypoint /usr/local/bin/generate-nginx-modules-repository-index \
+            "$BUILDER_IMAGE"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

@@ -1,0 +1,48 @@
+name: Module request
+description: Propose another third-party NGINX dynamic module
+title: "[Module]: "
+body:
+  - type: input
+    id: module
+    attributes:
+      label: Module name
+    validations:
+      required: true
+  - type: input
+    id: upstream
+    attributes:
+      label: Upstream repository
+      placeholder: https://github.com/owner/project
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: Upstream license
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Operational use case
+      description: Explain why this module is useful and why existing supported modules do not cover the need.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Suggested runtime smoke test
+      description: Describe how CI can prove that the loaded module actually works.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Initial checks
+      options:
+        - label: The upstream project appears actively maintained.
+          required: true
+        - label: The license appears to permit source and binary redistribution.
+          required: true
+        - label: The module supports NGINX dynamic-module builds.
+          required: true

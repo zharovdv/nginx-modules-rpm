@@ -11,12 +11,14 @@ RUN dnf install -y dnf-plugins-core epel-release \
 WORKDIR /workspace
 COPY build /usr/local/bin/build-nginx-module
 COPY create-repository /usr/local/bin/create-nginx-modules-repository
+COPY generate-repository-index /usr/local/bin/generate-nginx-modules-repository-index
 COPY sign-rpms /usr/local/bin/sign-nginx-module-rpms
 COPY modules /workspace/modules
 
 RUN chmod 0755 \
         /usr/local/bin/build-nginx-module \
         /usr/local/bin/create-nginx-modules-repository \
+        /usr/local/bin/generate-nginx-modules-repository-index \
         /usr/local/bin/sign-nginx-module-rpms \
         /workspace/modules/*/smoke-test.sh
 

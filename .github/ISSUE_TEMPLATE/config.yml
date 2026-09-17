@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installation and configuration questions
+    url: https://github.com/zharovdv/nginx-modules-rpm/discussions
+    about: Ask the community before opening a packaging bug.
+  - name: Security vulnerability
+    url: https://github.com/zharovdv/nginx-modules-rpm/security/advisories/new
+    about: Report package-integrity and supply-chain vulnerabilities privately.

@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${RPM_GPG_FINGERPRINT:?RPM_GPG_FINGERPRINT is required}"
+: "${RPM_REPOSITORY_DIRECTORY:?RPM_REPOSITORY_DIRECTORY is required}"
+: "${REPOSITORY_INDEX_PATH:?REPOSITORY_INDEX_PATH is required}"
+
+expected_fingerprint="${RPM_GPG_FINGERPRINT//[[:space:]]/}"
+expected_fingerprint="${expected_fingerprint^^}"
+[[ "$expected_fingerprint" =~ ^[0-9A-F]{40}$ ]] || {
+    printf "RPM_GPG_FINGERPRINT must be a full 40-character fingerprint\n" >&2
+    exit 1
+}
+
+mapfile -t rpms < <(find "$RPM_REPOSITORY_DIRECTORY/Packages" -maxdepth 1 -type f -name '*.rpm' -print | sort)
+[[ "${#rpms[@]}" -gt 0 ]] || {
+    printf "No RPM packages found in %s/Packages\n" "$RPM_REPOSITORY_DIRECTORY" >&2
+    exit 1
+}
+
+format_fingerprint() {
+    sed -E 's/(.{4})/\1 /g; s/[[:space:]]+$//' <<<"$1"
+}
+
+cat >"$REPOSITORY_INDEX_PATH" <<'EOF'
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NGINX dynamic modules RPM repository</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem 4rem; line-height: 1.5; }
+      h1 { margin-bottom: .25rem; }
+      .lead { color: #666; margin-top: 0; }
+      code, pre { font-family: ui-monospace, monospace; }
+      pre { overflow-x: auto; padding: 1rem; border: 1px solid #8885; border-radius: .5rem; }
+      table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
+      th, td { padding: .65rem; text-align: left; border-bottom: 1px solid #8885; }
+      th { white-space: nowrap; }
+      .notice { padding: 1rem; border-left: .3rem solid #d29922; background: #d2992218; }
+      .links { display: flex; flex-wrap: wrap; gap: 1rem; }
+      @media (prefers-color-scheme: dark) { .lead { color: #aaa; } }
+    </style>
+  </head>
+  <body>
+    <h1>NGINX dynamic modules RPM repository</h1>
+    <p class="lead">Signed community packages for official nginx.org Enterprise Linux 9 x86_64 packages.</p>
+    <p class="notice"><strong>Unofficial community project.</strong> Not affiliated with or supported by NGINX, F5 or the module authors.</p>
+    <h2>Install</h2>
+    <pre><code>sudo curl --fail --silent --show-error --location \
+    --output /etc/yum.repos.d/nginx-modules-rpm.repo \
+    https://zharovdv.github.io/nginx-modules-rpm/nginx-modules-rpm.repo
+
+sudo dnf install nginx-module-nchan
+# or: sudo dnf install nginx-module-geoip2</code></pre>
+    <h2>Available packages</h2>
+    <table>
+      <thead><tr><th>Package</th><th>Version</th><th>Architecture</th><th>Download size</th></tr></thead>
+      <tbody>
+EOF
+
+for rpm_file in "${rpms[@]}"; do
+    filename="$(basename "$rpm_file")"
+    name="$(rpm -qp --queryformat '%{NAME}' "$rpm_file")"
+    version="$(rpm -qp --queryformat '%{EPOCH}:%{VERSION}-%{RELEASE}' "$rpm_file")"
+    architecture="$(rpm -qp --queryformat '%{ARCH}' "$rpm_file")"
+    size="$(numfmt --to=iec-i --suffix=B "$(stat --format '%s' "$rpm_file")")"
+    printf '        <tr><td><a href="el9/x86_64/Packages/%s">%s</a></td><td><code>%s</code></td><td>%s</td><td>%s</td></tr>\n' \
+        "$filename" "$name" "$version" "$architecture" "$size" >>"$REPOSITORY_INDEX_PATH"
+done
+
+cat >>"$REPOSITORY_INDEX_PATH" <<EOF
+      </tbody>
+    </table>
+    <h2>Repository trust</h2>
+    <p>Signing-key fingerprint:</p>
+    <pre><code>$(format_fingerprint "$expected_fingerprint")</code></pre>
+    <p class="links">
+      <a href="nginx-modules-rpm.repo">DNF repository configuration</a>
+      <a href="RPM-GPG-KEY-nginx-modules-rpm">Public signing key</a>
+      <a href="el9/x86_64/repodata/repomd.xml">Repository metadata</a>
+      <a href="https://github.com/zharovdv/nginx-modules-rpm">Source and documentation</a>
+    </p>
+  </body>
+</html>
+EOF

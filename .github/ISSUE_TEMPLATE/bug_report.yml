@@ -1,0 +1,71 @@
+name: Packaging bug
+description: Report a reproducible build, installation, signature or runtime packaging problem
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use Discussions for general NGINX or module configuration help. Do not include secrets or private infrastructure details.
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      options:
+        - nchan
+        - geoip2
+        - repository or signing
+        - build system
+    validations:
+      required: true
+  - type: input
+    id: package
+    attributes:
+      label: Installed package version
+      description: Output of `rpm -q nginx-module-nchan` or `rpm -q nginx-module-geoip2`.
+      placeholder: nginx-module-nchan-1.30.5+1.3.8-1.el9.ngx.x86_64
+    validations:
+      required: true
+  - type: input
+    id: nginx
+    attributes:
+      label: NGINX package and version
+      description: Output of `rpm -q nginx` and `nginx -v`.
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and architecture
+      description: Output of `cat /etc/os-release` and `uname -m`.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest sequence of commands or configuration needed to reproduce the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Include complete error messages and `nginx -t` output after removing sensitive data.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I use official nginx.org packages on EL9 x86_64.
+          required: true
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: This report contains no private keys, credentials or sensitive infrastructure details.
+          required: true

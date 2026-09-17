@@ -1,0 +1,10 @@
+* @zharovdv
+
+/pins.env @zharovdv
+/keys/ @zharovdv
+/.github/workflows/ @zharovdv
+/Dockerfile @zharovdv
+/build @zharovdv
+/create-repository @zharovdv
+/generate-repository-index @zharovdv
+/sign-rpms @zharovdv
