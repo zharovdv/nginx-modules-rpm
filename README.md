@@ -1,6 +1,7 @@
 # NGINX dynamic modules RPM repository
 
 [![CI](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/ci.yml/badge.svg)](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/ci.yml)
+[![Lint](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/lint.yml/badge.svg)](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/lint.yml)
 [![DNF repository](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/repository.yml/badge.svg)](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/repository.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
