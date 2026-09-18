@@ -13,25 +13,26 @@ expected_fingerprint="${expected_fingerprint^^}"
     exit 1
 }
 
-export GNUPGHOME="$(mktemp -d)"
+GNUPGHOME="$(mktemp -d)"
+export GNUPGHOME
 trap 'find "$GNUPGHOME" -type f -delete 2>/dev/null || true; rmdir "$GNUPGHOME" 2>/dev/null || true' EXIT
 chmod 0700 "$GNUPGHOME"
 printf "%s" "$RPM_GPG_PRIVATE_KEY" | gpg --batch --import
 
 mapfile -t imported_fingerprints < <(
-    gpg --batch --with-colons --fingerprint --list-secret-keys \
-        | awk -F: '$1 == "fpr" { print toupper($10) }'
+    gpg --batch --with-colons --fingerprint --list-secret-keys |
+        awk -F: '$1 == "fpr" { print toupper($10) }'
 )
 printf "%s\n" "${imported_fingerprints[@]}" | grep -Fxq "$expected_fingerprint" || {
     printf "Imported secret key does not contain expected fingerprint %s\n" "$expected_fingerprint" >&2
     exit 1
 }
-gpg --batch --with-colons --fingerprint "$RPM_GPG_KEY_ID" \
-    | awk -F: '$1 == "fpr" { print toupper($10) }' \
-    | grep -Fxq "$expected_fingerprint" || {
-        printf "RPM_GPG_KEY_ID does not select expected fingerprint %s\n" "$expected_fingerprint" >&2
-        exit 1
-    }
+if ! gpg --batch --with-colons --fingerprint "$RPM_GPG_KEY_ID" |
+    awk -F: '$1 == "fpr" { print toupper($10) }' |
+    grep -Fxq "$expected_fingerprint"; then
+    printf "RPM_GPG_KEY_ID does not select expected fingerprint %s\n" "$expected_fingerprint" >&2
+    exit 1
+fi
 
 public_key_file="${GNUPGHOME}/RPM-GPG-KEY-nginx-modules-rpm"
 gpg --batch --armor --export "$expected_fingerprint" >"$public_key_file"

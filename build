@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-die() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
+die() {
+    printf "ERROR: %s\n" "$*" >&2
+    exit 1
+}
 log() { printf "==> %s\n" "$*"; }
 
 MODULE="${MODULE:-nchan}"
@@ -15,7 +18,8 @@ HOST_GID="${HOST_GID:-0}"
 
 module_dir="/workspace/modules/${MODULE}"
 [[ -f "${module_dir}/module.env" ]] || die "Unknown module: ${MODULE}"
-# shellcheck disable=SC1090
+# Module metadata is selected dynamically.
+# shellcheck disable=SC1091
 source "${module_dir}/module.env"
 
 work_dir="$(mktemp -d)"
@@ -32,16 +36,16 @@ pkg_oss_nginx_version="$(
     awk -F':=' '$1 ~ /^[[:space:]]*NGINX_VERSION[[:space:]]*$/ { gsub(/[[:space:]]/, "", $2); print $2 }' \
         "$pkg_oss_version_file"
 )"
-[[ "$pkg_oss_nginx_version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || \
+[[ "$pkg_oss_nginx_version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] ||
     die "Invalid NGINX version in pkg-oss: ${pkg_oss_nginx_version:-missing}"
 
 case "$NGINX_VERSION" in
     auto) nginx_version_target="$pkg_oss_nginx_version" ;;
     latest) die "NGINX_VERSION=latest is not reproducible; use auto or an exact version" ;;
     *)
-        [[ "$NGINX_VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || \
+        [[ "$NGINX_VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] ||
             die "NGINX_VERSION must be auto or an exact x.y.z version"
-        [[ "$NGINX_VERSION" == "$pkg_oss_nginx_version" ]] || \
+        [[ "$NGINX_VERSION" == "$pkg_oss_nginx_version" ]] ||
             die "Requested NGINX ${NGINX_VERSION}, but pinned pkg-oss ${pkg_oss_commit}" \
                 "packages NGINX ${pkg_oss_nginx_version}"
         nginx_version_target="$NGINX_VERSION"
@@ -50,15 +54,17 @@ esac
 
 nginx_minor="${nginx_version_target#*.}"
 nginx_minor="${nginx_minor%%.*}"
-if (( nginx_minor % 2 == 0 )); then
+if ((nginx_minor % 2 == 0)); then
     expected_nginx_repo=stable
 else
     expected_nginx_repo=mainline
 fi
-[[ "$NGINX_REPO" == "$expected_nginx_repo" ]] || \
+[[ "$NGINX_REPO" == "$expected_nginx_repo" ]] ||
     die "pkg-oss ${pkg_oss_commit} packages NGINX ${nginx_version_target};" \
         "use NGINX_REPO=${expected_nginx_repo}, not ${NGINX_REPO}"
 
+# DNF expands the literal repository variables in both branches.
+# shellcheck disable=SC2016
 case "$NGINX_REPO" in
     stable) nginx_baseurl='https://nginx.org/packages/centos/$releasever/$basearch/' ;;
     mainline) nginx_baseurl='https://nginx.org/packages/mainline/centos/$releasever/$basearch/' ;;
@@ -82,7 +88,7 @@ dnf install -y "nginx-${nginx_version_target}-*"
 
 nginx_version_resolved="$(nginx -v 2>&1 | sed 's#^nginx version: nginx/##')"
 nginx_package="$(rpm -q nginx)"
-[[ "$nginx_version_resolved" == "$nginx_version_target" ]] || \
+[[ "$nginx_version_resolved" == "$nginx_version_target" ]] ||
     die "Installed NGINX ${nginx_version_resolved}, expected ${nginx_version_target}"
 nginx_configure="$(nginx -V 2>&1 | sed -n 's/^configure arguments: //p')"
 [[ "$nginx_configure" == *--with-compat* ]] || die "nginx.org package lacks --with-compat"
@@ -104,11 +110,11 @@ if [[ -n "$MODULE_VERSION" ]]; then
     module_version="$MODULE_VERSION"
 else
     module_tag="$(
-        git -C "${work_dir}/module" tag --points-at HEAD \
-            | grep -E "$MODULE_STABLE_TAG_REGEX" \
-            | sort -V \
-            | tail -n 1 \
-            || true
+        git -C "${work_dir}/module" tag --points-at HEAD |
+            grep -E "$MODULE_STABLE_TAG_REGEX" |
+            sort -V |
+            tail -n 1 ||
+            true
     )"
     if [[ -n "$module_tag" ]]; then
         module_version="${module_tag#v}"
@@ -116,7 +122,7 @@ else
         module_version="0.0.0_git.${module_commit:0:12}"
     fi
 fi
-[[ "$module_version" =~ ^[0-9]+([.][0-9]+){1,2}([._][0-9A-Za-z]+)*$ ]] || \
+[[ "$module_version" =~ ^[0-9]+([.][0-9]+){1,2}([._][0-9A-Za-z]+)*$ ]] ||
     die "Invalid RPM module version: ${module_version}"
 
 # Force upstream's build script to use the exact reviewed checkout above.
@@ -164,16 +170,16 @@ done
 [[ -n "$binary_rpm" ]] || die "Could not find ${MODULE_PACKAGE} binary RPM"
 
 nginx_requirement="$(
-    rpm -qp --requires "$binary_rpm" \
-        | grep -E '^nginx-r[0-9]+([.][0-9]+)+$' \
-        | head -n 1 \
-        || true
+    rpm -qp --requires "$binary_rpm" |
+        grep -E '^nginx-r[0-9]+([.][0-9]+)+$' |
+        head -n 1 ||
+        true
 )"
 [[ -n "$nginx_requirement" ]] || die "Module RPM has no NGINX ABI dependency"
 expected_nginx_requirement="nginx-r${nginx_version_target}"
-[[ "$nginx_requirement" == "$expected_nginx_requirement" ]] || \
+[[ "$nginx_requirement" == "$expected_nginx_requirement" ]] ||
     die "Module requires ${nginx_requirement}, expected ${expected_nginx_requirement}"
-rpm -q --provides nginx | grep -Fxq "$nginx_requirement" || \
+rpm -q --provides nginx | grep -Fxq "$nginx_requirement" ||
     die "Installed ${nginx_package} does not provide required ABI ${nginx_requirement}"
 
 dnf install -y "$binary_rpm"

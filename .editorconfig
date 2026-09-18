@@ -27,6 +27,16 @@ indent_style = space
 indent_size = 4
 shell_variant = bash
 
+[install-lint-tools]
+indent_style = space
+indent_size = 4
+shell_variant = bash
+
+[lint]
+indent_style = space
+indent_size = 4
+shell_variant = bash
+
 [*.sh]
 indent_style = space
 indent_size = 4

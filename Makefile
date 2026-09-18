@@ -1,4 +1,4 @@
-.PHONY: build geoip2 nchan clean
+.PHONY: build geoip2 nchan lint lint-tools clean
 
 include pins.env
 
@@ -19,6 +19,12 @@ geoip2: build
 nchan: MODULE=nchan
 nchan: MODULE_REF=$(NCHAN_CI_COMMIT)
 nchan: build
+
+lint:
+	./lint
+
+lint-tools:
+	./install-lint-tools
 
 clean:
 	rm -rf dist

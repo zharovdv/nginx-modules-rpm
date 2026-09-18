@@ -108,9 +108,23 @@ docker compose run --build --rm builder
 
 Artifacts are written below `dist/nginx-module-<module>/<nginx-version>/<module-version>/`. Each directory contains RPM files, `build-info.txt` and `SHA256SUMS`.
 
+## Local lint
+
+The repository uses ShellCheck for shell analysis, shfmt for shell formatting and actionlint for GitHub Actions workflows. Their reviewed versions and download checksums are committed in [`lint-tools.env`](lint-tools.env).
+
+On Linux x86_64, install the pinned tools and run every check with:
+
+```bash
+make lint-tools
+PATH="$PWD/.cache/lint-tools:$PATH" make lint
+```
+
+The same checks run automatically for every pull request and push to `main`.
+
 ## Automation
 
 - `ci.yml` builds and tests both modules on pull requests, pushes and daily discovery runs;
+- `lint.yml` checks shell code, formatting and GitHub Actions workflows on pull requests and pushes;
 - reviewed CI and releases use immutable values committed in `pins.env`;
 - discovery runs may inspect moving upstream refs but have read-only permissions;
 - `release.yml` manually builds, tests, signs and publishes one reviewed module;

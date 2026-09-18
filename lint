@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+die() {
+    printf "ERROR: %s\n" "$*" >&2
+    exit 1
+}
+log() { printf "==> %s\n" "$*"; }
+
+repository_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$repository_dir"
+
+shell_files=(
+    build
+    create-repository
+    generate-repository-index
+    install-lint-tools
+    lint
+    sign-rpms
+    modules/geoip2/smoke-test.sh
+    modules/nchan/smoke-test.sh
+)
+
+for command in shellcheck shfmt actionlint; do
+    command -v "$command" >/dev/null ||
+        die "${command} is not installed; run ./install-lint-tools and add .cache/lint-tools to PATH"
+done
+
+log "Running ShellCheck"
+shellcheck --external-sources "${shell_files[@]}"
+
+log "Checking shell formatting"
+shfmt --diff --indent 4 --case-indent "${shell_files[@]}"
+
+log "Checking GitHub Actions workflows"
+actionlint
+
+log "Lint passed"

@@ -54,8 +54,8 @@ for _ in {1..50}; do
             --output /dev/null \
             --write-out "%{http_code}" \
             --data "nchan-smoke-ok" \
-            "http://127.0.0.1:18080/pub?id=smoke" \
-            || true
+            "http://127.0.0.1:18080/pub?id=smoke" ||
+            true
     )"
 
     if [[ "$publisher_status" == 201 ]]; then

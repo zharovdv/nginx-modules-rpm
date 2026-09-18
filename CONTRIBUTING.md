@@ -28,6 +28,13 @@ fix(ci): verify downloaded release assets
 docs: clarify repository installation
 ```
 
+Before submitting shell or workflow changes, run:
+
+```bash
+make lint-tools
+PATH="$PWD/.cache/lint-tools:$PATH" make lint
+```
+
 ## Updating existing modules
 
 Update immutable pins in `pins.env` through a reviewed pull request. The NGINX version and its matching `pkg-oss` commit must be updated together. Never replace reviewed release pins with moving branches or tags.
