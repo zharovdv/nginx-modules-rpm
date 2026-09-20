@@ -1,6 +1,6 @@
 Name:           maxmind-geolite2
 Version:        %{?geolite2_version}%{!?geolite2_version:0}
-Release:        1%{?dist}
+Release:        %{?geolite2_release}%{!?geolite2_release:1}%{?dist}
 Summary:        MaxMind GeoLite2 geolocation databases
 License:        CC-BY-SA-4.0 AND LicenseRef-MaxMind-GeoLite2-EULA
 URL:            https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/

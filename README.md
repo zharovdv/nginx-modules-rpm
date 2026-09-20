@@ -141,7 +141,7 @@ The same checks run automatically for every pull request and push to `main`.
 - reviewed CI and releases use immutable values committed in `pins.env`;
 - discovery runs may inspect moving upstream refs but have read-only permissions;
 - `release.yml` manually builds, tests, signs and publishes one reviewed module;
-- `release-geolite2.yml` downloads, verifies, packages, signs and publishes all three GeoLite2 databases;
+- `release-geolite2.yml` checks GeoLite2 daily and requests protected release approval only when a new bundle exists;
 - `repository.yml` rebuilds the complete signed DNF repository from all GitHub Releases and publishes it through GitHub Pages;
 - external Actions and the base image are pinned to immutable commits or digests;
 - Dependabot proposes dependency updates as reviewable pull requests.

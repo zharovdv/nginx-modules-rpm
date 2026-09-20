@@ -6,6 +6,7 @@
 /Dockerfile @zharovdv
 /build @zharovdv
 /build-geolite2-rpms @zharovdv
+/check-geolite2-updates @zharovdv
 /create-repository @zharovdv
 /generate-repository-index @zharovdv
 /sign-rpms @zharovdv

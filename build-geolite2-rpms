@@ -79,7 +79,10 @@ for database_release_date in "${release_dates[@]:1}"; do
 done
 
 package_version="${bundle_release_date:0:4}.${bundle_release_date:4:2}.${bundle_release_date:6:2}"
-artifact_dir="/dist/maxmind-geolite2/${package_version}"
+bundle_revision="${release_dates[0]}.${release_dates[1]}.${release_dates[2]}"
+bundle_id="${package_version}-${bundle_revision}"
+rpm_release="1.${bundle_revision}"
+artifact_dir="/dist/maxmind-geolite2/${bundle_id}"
 
 rm -rf "$artifact_dir"
 mkdir -p "$artifact_dir"
@@ -88,13 +91,16 @@ log "Building maxmind-geolite2 ${package_version}"
 rpmbuild \
     --define "_topdir ${top_dir}" \
     --define "geolite2_version ${package_version}" \
+    --define "geolite2_release ${rpm_release}" \
     -bb "$spec_file"
 
 find "${top_dir}/RPMS/noarch" -maxdepth 1 -type f -name '*.rpm' -exec cp --target-directory "$artifact_dir" {} +
 
 cat >"${artifact_dir}/build-info.txt" <<EOF
 Package: maxmind-geolite2
+Bundle ID: ${bundle_id}
 Bundle version: ${package_version}
+RPM release: ${rpm_release}
 Bundle release date: ${bundle_release_date}
 Source: MaxMind official GeoLite2 download service
 Source URL: ${MAXMIND_DOWNLOAD_BASE_URL}

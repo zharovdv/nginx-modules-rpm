@@ -20,32 +20,38 @@ The release workflow keeps only the newest `maxmind-geolite2-*` GitHub Release a
 ## MaxMind account setup
 
 1. Create or use a MaxMind account with GeoLite2 downloads enabled.
-2. Create a license key in the MaxMind account portal. Give it a clear name such as `nginx-modules-rpm GitHub Actions`.
-3. In GitHub, open **Settings → Environments → release**.
-4. Add these environment secrets:
+2. Create a license key in the MaxMind account portal. Give it the project name `nginx-modules-rpm`.
+3. In GitHub, create an environment named `geolite2-discovery` without required reviewers or a wait timer.
+4. Add these environment secrets to `geolite2-discovery`:
    - `MAXMIND_ACCOUNT_ID`: the numeric MaxMind account ID;
    - `MAXMIND_LICENSE_KEY`: the generated license key.
-5. Keep the existing `RPM_GPG_PRIVATE_KEY` secret and `RPM_GPG_KEY_ID` variable in the same environment.
+5. Keep `RPM_GPG_PRIVATE_KEY` and `RPM_GPG_KEY_ID` in the protected `release` environment.
+6. Remove the two MaxMind secrets from `release` after verifying that they exist in `geolite2-discovery`.
 
-The workflow passes MaxMind credentials directly to the build container. They are never stored in an RPM, release asset, build-information file or repository metadata.
+The discovery environment can read the free databases but cannot sign or publish a package. The protected release environment can sign the verified unsigned artifacts but does not receive MaxMind credentials. The credentials are never stored in an RPM, workflow artifact, release asset, build-information file or repository metadata.
 
 ## Publishing an update
 
-Open **Actions → Build, sign and release GeoLite2 databases → Run workflow**. No version input is required. MaxMind can publish the databases on different days, so the RPM bundle version uses the newest release date in the set. The individual release date of every database is recorded in `build-info.txt`.
+The workflow checks MaxMind once a day and can also be started manually through **Actions → Build, sign and release GeoLite2 databases → Run workflow**. No version input is required. If the current bundle is already published, the workflow exits before building and does not request release approval.
+
+When at least one database changes, the discovery job builds and uploads unsigned RPMs. The protected `release` job then waits for approval. After approval, it downloads those exact artifacts, signs them and publishes the release.
+
+MaxMind can publish the databases on different days. The RPM version uses the newest date, while the RPM release and GitHub tag include all three dates in Country, City and ASN order. This prevents a collision when only one database changes without changing the newest date. Individual dates and source hashes are recorded in `build-info.txt`.
 
 The workflow:
 
-1. downloads all three official archives and their SHA-256 files over HTTPS;
-2. verifies every archive and validates every MMDB file;
-3. records the independent release date of every database;
-4. builds and signs three data RPMs plus the metapackage;
-5. publishes checksums, source hashes, license notice and build provenance;
-6. removes superseded GeoLite2 releases;
-7. rebuilds and deploys the signed DNF repository.
+1. checks all three official release dates without consuming a database download when no update exists;
+2. downloads all three official archives and their SHA-256 files over HTTPS when an update exists;
+3. verifies every archive, validates every MMDB file and builds unsigned RPMs;
+4. pauses at the protected `release` environment;
+5. signs three data RPMs plus the metapackage after approval;
+6. publishes checksums, source hashes, license notice and build provenance;
+7. removes superseded GeoLite2 releases;
+8. rebuilds and deploys the signed DNF repository.
 
 If any step before publication fails, no existing database release is removed.
 
-For a local unsigned build, export `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY`, then run `make geolite2-data`. Artifacts are written below `dist/maxmind-geolite2/<version>/`.
+For a local unsigned build, export `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY`, then run `make geolite2-data`. Artifacts are written below `dist/maxmind-geolite2/<bundle-id>/`.
 
 ## NGINX example
 

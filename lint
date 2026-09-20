@@ -13,6 +13,7 @@ cd "$repository_dir"
 shell_files=(
     build
     build-geolite2-rpms
+    check-geolite2-updates
     create-repository
     generate-repository-index
     install-lint-tools

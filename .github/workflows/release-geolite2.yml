@@ -1,6 +1,8 @@
 name: Build, sign and release GeoLite2 databases
 
 on:
+  schedule:
+    - cron: "37 5 * * *"
   workflow_dispatch:
 
 permissions:
@@ -14,16 +16,131 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  discover-and-build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: release
+    environment: geolite2-discovery
+    outputs:
+      publish: "${{ steps.prepare.outputs.publish }}"
+      artifact_dir: "${{ steps.prepare.outputs.artifact_dir }}"
+      bundle_id: "${{ steps.prepare.outputs.bundle_id }}"
+      package_version: "${{ steps.prepare.outputs.package_version }}"
+      release_tag: "${{ steps.prepare.outputs.release_tag }}"
     env:
       BUILDER_IMAGE: nginx-modules-rpm-builder:rl9
       DOCKER_PLATFORM: linux/amd64
-      PUBLIC_KEY_PATH: keys/RPM-GPG-KEY-nginx-modules-rpm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check official GeoLite2 release dates
+        id: databases
+        env:
+          MAXMIND_ACCOUNT_ID: "${{ secrets.MAXMIND_ACCOUNT_ID }}"
+          MAXMIND_LICENSE_KEY: "${{ secrets.MAXMIND_LICENSE_KEY }}"
+        run: |
+          set -Eeuo pipefail
+          chmod 0755 check-geolite2-updates
+          ./check-geolite2-updates
+
+      - name: Check whether the bundle is already published
+        id: release
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          RELEASE_TAG: "${{ steps.databases.outputs.release_tag }}"
+        run: |
+          set -Eeuo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              echo "update_available=false" >>"$GITHUB_OUTPUT"
+              echo "GeoLite2 bundle ${RELEASE_TAG} is already published" >>"$GITHUB_STEP_SUMMARY"
+          else
+              echo "update_available=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.release.outputs.update_available == 'true'
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        if: steps.release.outputs.update_available == 'true'
+        with:
+          context: .
+          load: true
+          pull: true
+          platforms: "${{ env.DOCKER_PLATFORM }}"
+          tags: "${{ env.BUILDER_IMAGE }}"
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Download, verify and build unsigned database RPMs
+        if: steps.release.outputs.update_available == 'true'
+        env:
+          MAXMIND_ACCOUNT_ID: "${{ secrets.MAXMIND_ACCOUNT_ID }}"
+          MAXMIND_LICENSE_KEY: "${{ secrets.MAXMIND_LICENSE_KEY }}"
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p dist
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            --volume "${PWD}/dist:/dist" \
+            --env MAXMIND_ACCOUNT_ID \
+            --env MAXMIND_LICENSE_KEY \
+            --env "HOST_UID=$(id -u)" \
+            --env "HOST_GID=$(id -g)" \
+            --entrypoint /usr/local/bin/build-maxmind-geolite2-rpms \
+            "$BUILDER_IMAGE"
+
+      - name: Prepare unsigned bundle
+        id: prepare
+        if: steps.release.outputs.update_available == 'true'
+        env:
+          EXPECTED_BUNDLE_ID: "${{ steps.databases.outputs.bundle_id }}"
+        run: |
+          set -Eeuo pipefail
+
+          artifact_dir="$(find dist/maxmind-geolite2 -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          [[ -n "$artifact_dir" ]]
+          bundle_id="$(basename "$artifact_dir")"
+          [[ "$bundle_id" == "$EXPECTED_BUNDLE_ID" ]]
+
+          {
+              echo "publish=true"
+              echo "artifact_dir=$artifact_dir"
+              echo "bundle_id=$bundle_id"
+              echo "package_version=${{ steps.databases.outputs.package_version }}"
+              echo "release_tag=maxmind-geolite2-${bundle_id}"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Upload unsigned bundle for protected release
+        if: steps.prepare.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: "unsigned-geolite2-${{ steps.prepare.outputs.bundle_id }}"
+          path: "${{ steps.prepare.outputs.artifact_dir }}"
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  release:
+    needs: discover-and-build
+    if: needs.discover-and-build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    env:
+      ARTIFACT_DIR: "dist/maxmind-geolite2/${{ needs.discover-and-build.outputs.bundle_id }}"
+      BUILDER_IMAGE: nginx-modules-rpm-builder:rl9
+      DOCKER_PLATFORM: linux/amd64
+      PACKAGE_VERSION: "${{ needs.discover-and-build.outputs.package_version }}"
+      PUBLIC_KEY_PATH: keys/RPM-GPG-KEY-nginx-modules-rpm
+      RELEASE_TAG: "${{ needs.discover-and-build.outputs.release_tag }}"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download unsigned bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: "unsigned-geolite2-${{ needs.discover-and-build.outputs.bundle_id }}"
+          path: "${{ env.ARTIFACT_DIR }}"
 
       - name: Load reviewed signing-key fingerprint
         run: |
@@ -62,38 +179,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Download, verify and build database RPMs
-        env:
-          MAXMIND_ACCOUNT_ID: "${{ secrets.MAXMIND_ACCOUNT_ID }}"
-          MAXMIND_LICENSE_KEY: "${{ secrets.MAXMIND_LICENSE_KEY }}"
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p dist
-          docker run --rm \
-            --platform "$DOCKER_PLATFORM" \
-            --volume "${PWD}/dist:/dist" \
-            --env MAXMIND_ACCOUNT_ID \
-            --env MAXMIND_LICENSE_KEY \
-            --env "HOST_UID=$(id -u)" \
-            --env "HOST_GID=$(id -g)" \
-            --entrypoint /usr/local/bin/build-maxmind-geolite2-rpms \
-            "$BUILDER_IMAGE"
-
-          artifact_dir="$(find dist/maxmind-geolite2 -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-          [[ -n "$artifact_dir" ]]
-          package_version="$(basename "$artifact_dir")"
-
-          {
-              echo "artifact_dir=$artifact_dir"
-              echo "package_version=$package_version"
-              echo "release_tag=maxmind-geolite2-$package_version"
-          } >>"$GITHUB_ENV"
-
       - name: Refuse overwrite
         env:
           GH_TOKEN: "${{ github.token }}"
-        run: '! gh release view "$release_tag" >/dev/null 2>&1'
+        run: '! gh release view "$RELEASE_TAG" >/dev/null 2>&1'
 
       - name: Sign RPMs
         env:
@@ -108,7 +197,7 @@ jobs:
             --env RPM_GPG_PRIVATE_KEY \
             --env RPM_GPG_KEY_ID \
             --env RPM_GPG_FINGERPRINT \
-            --env "RPM_DIRECTORY=/dist/${artifact_dir#dist/}" \
+            --env "RPM_DIRECTORY=/${ARTIFACT_DIR}" \
             --entrypoint /usr/local/bin/sign-nginx-module-rpms \
             "$BUILDER_IMAGE"
 
@@ -117,14 +206,15 @@ jobs:
           set -Eeuo pipefail
 
           (
-              cd "$artifact_dir"
+              cd "$ARTIFACT_DIR"
               sha256sum --check SHA256SUMS
           )
 
-          cat >"${artifact_dir}/RELEASE_NOTES.md" <<EOF
+          cat >"${ARTIFACT_DIR}/RELEASE_NOTES.md" <<EOF
           Signed community RPM packages for the MaxMind GeoLite2 Country, City and ASN databases.
 
-          GeoLite2 bundle version: ${package_version}
+          GeoLite2 bundle: ${{ needs.discover-and-build.outputs.bundle_id }}
+          RPM version: ${PACKAGE_VERSION}
           Signing key fingerprint: ${RPM_GPG_FINGERPRINT}
 
           This product includes GeoLite2 Data created by MaxMind, available from https://www.maxmind.com.
@@ -143,15 +233,15 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          gh release create "$release_tag" \
-            "$artifact_dir"/*.rpm \
-            "$artifact_dir/build-info.txt" \
-            "$artifact_dir/SHA256SUMS" \
+          gh release create "$RELEASE_TAG" \
+            "$ARTIFACT_DIR"/*.rpm \
+            "$ARTIFACT_DIR/build-info.txt" \
+            "$ARTIFACT_DIR/SHA256SUMS" \
             packaging/maxmind-geolite2/GEOLITE2-LICENSE.txt \
             "$PUBLIC_KEY_PATH" \
             --target "$GITHUB_SHA" \
-            --title "$release_tag" \
-            --notes-file "$artifact_dir/RELEASE_NOTES.md"
+            --title "$RELEASE_TAG" \
+            --notes-file "$ARTIFACT_DIR/RELEASE_NOTES.md"
 
       - name: Remove superseded GeoLite2 releases
         env:
@@ -161,8 +251,8 @@ jobs:
 
           mapfile -t superseded_tags < <(
               gh release list --limit 1000 --json tagName \
-                  --jq ".[] | select(.tagName | startswith(\"maxmind-geolite2-\")) | .tagName" |
-                  grep -Fxv "$release_tag" || true
+                  --jq '.[] | select(.tagName | startswith("maxmind-geolite2-")) | .tagName' |
+                  grep -Fxv "$RELEASE_TAG" || true
           )
 
           for tag in "${superseded_tags[@]}"; do
