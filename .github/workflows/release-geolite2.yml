@@ -69,6 +69,7 @@ jobs:
           if [[ "${#previous_tags[@]}" -gt 0 ]]; then
               gh release download "${previous_tags[0]}" \
                   --pattern build-info.txt \
+                  --clobber \
                   --output previous-build-info.txt
               published_bundle_id="$(sed -n 's/^Bundle ID: //p' previous-build-info.txt)"
               published_metapackage_version="$(
