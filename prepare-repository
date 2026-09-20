@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${BUILDER_IMAGE:?BUILDER_IMAGE is required}"
+: "${DOCKER_PLATFORM:?DOCKER_PLATFORM is required}"
+: "${GH_TOKEN:?GH_TOKEN is required}"
+: "${PUBLIC_KEY_PATH:?PUBLIC_KEY_PATH is required}"
+: "${RPM_GPG_PRIVATE_KEY:?RPM_GPG_PRIVATE_KEY is required}"
+: "${RPM_GPG_KEY_ID:?RPM_GPG_KEY_ID is required}"
+: "${RPM_GPG_FINGERPRINT:?RPM_GPG_FINGERPRINT is required}"
+
+repository_site_dir=repository-site
+release_rpm_dir=release-rpms
+
+rm -rf "$repository_site_dir" "$release_rpm_dir"
+mkdir -p "${repository_site_dir}/el9/x86_64/Packages" "$release_rpm_dir"
+
+mapfile -t release_tags < <(
+    gh release list --limit 1000 --json tagName,isDraft \
+        --jq '.[] | select(.isDraft == false) | .tagName'
+)
+[[ "${#release_tags[@]}" -gt 0 ]]
+
+for tag in "${release_tags[@]}"; do
+    download_directory="${release_rpm_dir}/${tag}"
+    mkdir -p "$download_directory"
+    gh release download "$tag" --pattern '*.rpm' --dir "$download_directory"
+
+    while IFS= read -r rpm_file; do
+        destination="${repository_site_dir}/el9/x86_64/Packages/$(basename "$rpm_file")"
+        if [[ -e "$destination" ]]; then
+            cmp --silent "$rpm_file" "$destination" || {
+                printf "Conflicting release assets have the same filename: %s\n" \
+                    "$(basename "$rpm_file")" >&2
+                exit 1
+            }
+        else
+            cp "$rpm_file" "$destination"
+        fi
+    done < <(find "$download_directory" -maxdepth 1 -type f -name '*.rpm' -print | sort)
+done
+
+docker run --rm \
+    --platform "$DOCKER_PLATFORM" \
+    --volume "${PWD}/${repository_site_dir}:/repository" \
+    --env RPM_GPG_PRIVATE_KEY \
+    --env RPM_GPG_KEY_ID \
+    --env RPM_GPG_FINGERPRINT \
+    --env RPM_REPOSITORY_DIRECTORY=/repository/el9/x86_64 \
+    --entrypoint /usr/local/bin/create-nginx-modules-repository \
+    "$BUILDER_IMAGE"
+
+cp "$PUBLIC_KEY_PATH" "${repository_site_dir}/RPM-GPG-KEY-nginx-modules-rpm"
+cp packaging/nginx-modules-rpm.repo "${repository_site_dir}/nginx-modules-rpm.repo"
+
+docker run --rm \
+    --platform "$DOCKER_PLATFORM" \
+    --volume "${PWD}/${repository_site_dir}:/repository" \
+    --env RPM_GPG_FINGERPRINT \
+    --env RPM_REPOSITORY_DIRECTORY=/repository/el9/x86_64 \
+    --env REPOSITORY_INDEX_PATH=/repository/index.html \
+    --entrypoint /usr/local/bin/generate-nginx-modules-repository-index \
+    "$BUILDER_IMAGE"

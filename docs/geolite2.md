@@ -42,7 +42,11 @@ Each data package has an independent version based only on that database's relea
 - `maxmind-geolite2-city-2026.09.18-1.<hash>.el9.noarch`;
 - `maxmind-geolite2-asn-2026.09.19-1.<hash>.el9.noarch`.
 
-Only the `maxmind-geolite2` metapackage and the GitHub release tag describe the complete three-database bundle. Consequently, when only ASN changes, DNF upgrades ASN and the small metapackage; Country and City retain their existing NEVRA and exact signed RPM bytes. Individual dates and source hashes are recorded in `build-info.txt`.
+The `maxmind-geolite2` metapackage uses the newest database date plus a bundle sequence, for example `2026.09.20.1-1`. If another database changes while the newest date stays the same, the next metapackage version is `2026.09.20.2-1`. The sequence resets to `.1` when the newest date advances. The GitHub release tag uses the same readable version, for example `maxmind-geolite2-2026.09.20.1`.
+
+The exact three-database state remains in `build-info.txt` and `SHA256SUMS`. Consequently, when only ASN changes, DNF upgrades ASN and the small metapackage; Country and City retain their existing NEVRA and exact signed RPM bytes. Individual dates and source hashes are recorded in `build-info.txt`.
+
+The first run after upgrading from the legacy composite RPM release automatically republishes the current bundle once with the readable metapackage version. It reuses the existing signed data RPMs and removes the superseded release only after the replacement is published. Later runs with the same bundle exit without requesting approval.
 
 The workflow:
 
@@ -51,10 +55,10 @@ The workflow:
 3. verifies every archive, validates every MMDB file and builds the current RPM set;
 4. reuses exact previously signed RPMs for databases whose NEVRA did not change;
 5. pauses at the protected `release` environment;
-6. signs the new data RPMs and metapackage after approval;
+6. signs the new data RPMs, metapackage and DNF repository metadata after one approval;
 7. publishes checksums, source hashes, license notice and build provenance;
 8. removes superseded GeoLite2 releases;
-9. rebuilds and deploys the signed DNF repository.
+9. deploys the prepared DNF repository to GitHub Pages without another approval.
 
 If any step before publication fails, no existing database release is removed.
 

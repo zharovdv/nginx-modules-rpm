@@ -200,7 +200,31 @@ jobs:
             --title "$release_tag" \
             --notes-file "$artifact_dir/RELEASE_NOTES.md"
 
-  publish-repository:
+      - name: Build and sign DNF repository
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          RPM_GPG_PRIVATE_KEY: "${{ secrets.RPM_GPG_PRIVATE_KEY }}"
+          RPM_GPG_KEY_ID: "${{ vars.RPM_GPG_KEY_ID }}"
+        run: |
+          set -Eeuo pipefail
+          ./prepare-repository
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload DNF repository for GitHub Pages
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: repository-site
+
+  deploy-repository:
     needs: release
-    uses: ./.github/workflows/repository.yml
-    secrets: inherit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: "${{ steps.deployment.outputs.page_url }}"
+    steps:
+      - name: Publish DNF repository
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

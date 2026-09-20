@@ -47,6 +47,11 @@ indent_style = space
 indent_size = 4
 shell_variant = bash
 
+[prepare-repository]
+indent_style = space
+indent_size = 4
+shell_variant = bash
+
 [reuse-geolite2-rpms]
 indent_style = space
 indent_size = 4

@@ -74,7 +74,6 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
         echo "package_version=$package_version"
         echo "bundle_revision=$bundle_revision"
         echo "bundle_id=$bundle_id"
-        echo "release_tag=maxmind-geolite2-${bundle_id}"
     } >>"$GITHUB_OUTPUT"
 fi
 

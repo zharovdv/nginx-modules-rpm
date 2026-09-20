@@ -46,12 +46,33 @@ jobs:
         id: release
         env:
           GH_TOKEN: "${{ github.token }}"
-          RELEASE_TAG: "${{ steps.databases.outputs.release_tag }}"
+          EXPECTED_BUNDLE_ID: "${{ steps.databases.outputs.bundle_id }}"
         run: |
           set -Eeuo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+
+          mapfile -t previous_tags < <(
+              gh release list --limit 1000 --json tagName \
+                  --jq '.[] | select(.tagName | startswith("maxmind-geolite2-")) | .tagName'
+          )
+
+          published_bundle_id=""
+          published_metapackage_version=""
+          if [[ "${#previous_tags[@]}" -gt 0 ]]; then
+              gh release download "${previous_tags[0]}" \
+                  --pattern build-info.txt \
+                  --output previous-build-info.txt
+              published_bundle_id="$(sed -n 's/^Bundle ID: //p' previous-build-info.txt)"
+              published_metapackage_version="$(
+                  sed -n 's/^Metapackage version: //p' previous-build-info.txt
+              )"
+          fi
+
+          if
+              [[ "$published_bundle_id" == "$EXPECTED_BUNDLE_ID" ]] &&
+                  [[ "$published_metapackage_version" =~ ^[0-9]+([.][0-9]+){3}$ ]]
+          then
               echo "update_available=false" >>"$GITHUB_OUTPUT"
-              echo "GeoLite2 bundle ${RELEASE_TAG} is already published" >>"$GITHUB_STEP_SUMMARY"
+              echo "GeoLite2 bundle ${EXPECTED_BUNDLE_ID} is already published" >>"$GITHUB_STEP_SUMMARY"
           else
               echo "update_available=true" >>"$GITHUB_OUTPUT"
           fi
@@ -101,10 +122,12 @@ jobs:
           docker run --rm \
             --platform "$DOCKER_PLATFORM" \
             --volume "${PWD}/dist:/dist" \
+            --volume "${PWD}/previous-geolite2-rpms:/previous-geolite2-rpms:ro" \
             --env MAXMIND_ACCOUNT_ID \
             --env MAXMIND_LICENSE_KEY \
             --env "HOST_UID=$(id -u)" \
             --env "HOST_GID=$(id -g)" \
+            --env PREVIOUS_RPM_DIRECTORY=/previous-geolite2-rpms \
             --entrypoint /usr/local/bin/build-maxmind-geolite2-rpms \
             "$BUILDER_IMAGE"
 
@@ -142,13 +165,15 @@ jobs:
           [[ -n "$artifact_dir" ]]
           bundle_id="$(basename "$artifact_dir")"
           [[ "$bundle_id" == "$EXPECTED_BUNDLE_ID" ]]
+          metapackage_version="$(sed -n 's/^Metapackage version: //p' "${artifact_dir}/build-info.txt")"
+          [[ "$metapackage_version" =~ ^[0-9]+([.][0-9]+){3}$ ]]
 
           {
               echo "publish=true"
               echo "artifact_dir=$artifact_dir"
               echo "bundle_id=$bundle_id"
-              echo "package_version=${{ steps.databases.outputs.package_version }}"
-              echo "release_tag=maxmind-geolite2-${bundle_id}"
+              echo "package_version=$metapackage_version"
+              echo "release_tag=maxmind-geolite2-${metapackage_version}"
           } >>"$GITHUB_OUTPUT"
 
       - name: Upload unsigned bundle for protected release
@@ -305,7 +330,31 @@ jobs:
               gh release delete "$tag" --cleanup-tag --yes
           done
 
-  publish-repository:
+      - name: Build and sign DNF repository
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          RPM_GPG_PRIVATE_KEY: "${{ secrets.RPM_GPG_PRIVATE_KEY }}"
+          RPM_GPG_KEY_ID: "${{ vars.RPM_GPG_KEY_ID }}"
+        run: |
+          set -Eeuo pipefail
+          ./prepare-repository
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload DNF repository for GitHub Pages
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: repository-site
+
+  deploy-repository:
     needs: release
-    uses: ./.github/workflows/repository.yml
-    secrets: inherit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: "${{ steps.deployment.outputs.page_url }}"
+    steps:
+      - name: Publish DNF repository
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -62,67 +62,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Download all released RPMs
+      - name: Build and sign DNF repository
         env:
           GH_TOKEN: "${{ github.token }}"
-        run: |
-          set -Eeuo pipefail
-
-          rm -rf repository-site release-rpms
-          mkdir -p repository-site/el9/x86_64/Packages release-rpms
-
-          mapfile -t release_tags < <(
-              gh release list --limit 1000 --json tagName,isDraft \
-                  --jq '.[] | select(.isDraft == false) | .tagName'
-          )
-          [[ "${#release_tags[@]}" -gt 0 ]]
-
-          for tag in "${release_tags[@]}"; do
-              download_directory="release-rpms/${tag}"
-              mkdir -p "$download_directory"
-              gh release download "$tag" --pattern '*.rpm' --dir "$download_directory"
-
-              while IFS= read -r rpm_file; do
-                  destination="repository-site/el9/x86_64/Packages/$(basename "$rpm_file")"
-                  if [[ -e "$destination" ]]; then
-                      cmp --silent "$rpm_file" "$destination" || {
-                          printf "Conflicting release assets have the same filename: %s\n" "$(basename "$rpm_file")" >&2
-                          exit 1
-                      }
-                  else
-                      cp "$rpm_file" "$destination"
-                  fi
-              done < <(find "$download_directory" -maxdepth 1 -type f -name '*.rpm' -print | sort)
-          done
-
-      - name: Create and sign DNF repository metadata
-        env:
           RPM_GPG_PRIVATE_KEY: "${{ secrets.RPM_GPG_PRIVATE_KEY }}"
           RPM_GPG_KEY_ID: "${{ vars.RPM_GPG_KEY_ID }}"
         run: |
           set -Eeuo pipefail
-
-          docker run --rm \
-            --platform "$DOCKER_PLATFORM" \
-            --volume "${PWD}/repository-site:/repository" \
-            --env RPM_GPG_PRIVATE_KEY \
-            --env RPM_GPG_KEY_ID \
-            --env RPM_GPG_FINGERPRINT \
-            --env RPM_REPOSITORY_DIRECTORY=/repository/el9/x86_64 \
-            --entrypoint /usr/local/bin/create-nginx-modules-repository \
-            "$BUILDER_IMAGE"
-
-          cp "$PUBLIC_KEY_PATH" repository-site/RPM-GPG-KEY-nginx-modules-rpm
-          cp packaging/nginx-modules-rpm.repo repository-site/nginx-modules-rpm.repo
-
-          docker run --rm \
-            --platform "$DOCKER_PLATFORM" \
-            --volume "${PWD}/repository-site:/repository" \
-            --env RPM_GPG_FINGERPRINT \
-            --env RPM_REPOSITORY_DIRECTORY=/repository/el9/x86_64 \
-            --env REPOSITORY_INDEX_PATH=/repository/index.html \
-            --entrypoint /usr/local/bin/generate-nginx-modules-repository-index \
-            "$BUILDER_IMAGE"
+          ./prepare-repository
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

@@ -9,6 +9,7 @@
 /check-geolite2-updates @zharovdv
 /create-repository @zharovdv
 /generate-repository-index @zharovdv
+/prepare-repository @zharovdv
 /reuse-geolite2-rpms @zharovdv
 /sign-rpms @zharovdv
 /update-pins @zharovdv

@@ -103,7 +103,9 @@ RPM_GPG_FINGERPRINT=0123456789ABCDEF0123456789ABCDEF01234567
 
 The release workflow imports the private key into a temporary GPG home,
 requires its fingerprint to match `pins.env`, signs every RPM, verifies the
-result, and destroys the temporary keyring.
+result, signs the DNF repository metadata in the same protected job, and
+destroys the temporary keyrings. GitHub Pages deployment then runs without a
+second release approval.
 
 Restrict the `release` environment to the protected `main` branch. Enable
 required reviewers when another maintainer is available to approve releases.

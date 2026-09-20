@@ -18,6 +18,7 @@ shell_files=(
     generate-repository-index
     install-lint-tools
     lint
+    prepare-repository
     reuse-geolite2-rpms
     sign-rpms
     update-pins

@@ -84,7 +84,23 @@ package_version="${bundle_release_date:0:4}.${bundle_release_date:4:2}.${bundle_
 bundle_digest="$(printf "%s\n" "${archive_sha256s[@]}" | sha256sum | cut -d' ' -f1)"
 bundle_revision="${release_dates[0]}.${release_dates[1]}.${release_dates[2]}.${bundle_digest:0:12}"
 bundle_id="${package_version}-${bundle_revision}"
-rpm_release="1.${bundle_revision}"
+bundle_sequence=1
+
+if [[ -n "${PREVIOUS_RPM_DIRECTORY:-}" && -d "$PREVIOUS_RPM_DIRECTORY" ]]; then
+    while IFS= read -r previous_rpm; do
+        [[ "$(rpm -qp --queryformat '%{NAME}' "$previous_rpm")" == maxmind-geolite2 ]] || continue
+
+        previous_version="$(rpm -qp --queryformat '%{VERSION}' "$previous_rpm")"
+        previous_sequence="${previous_version#"${package_version}."}"
+        if [[ "$previous_version" == "${package_version}."* && "$previous_sequence" =~ ^[0-9]+$ ]]; then
+            bundle_sequence="$((previous_sequence + 1))"
+        fi
+        break
+    done < <(find "$PREVIOUS_RPM_DIRECTORY" -maxdepth 1 -type f -name 'maxmind-geolite2-*.rpm' -print | sort)
+fi
+
+metapackage_version="${package_version}.${bundle_sequence}"
+rpm_release=1
 country_version="${release_dates[0]:0:4}.${release_dates[0]:4:2}.${release_dates[0]:6:2}"
 city_version="${release_dates[1]:0:4}.${release_dates[1]:4:2}.${release_dates[1]:6:2}"
 asn_version="${release_dates[2]:0:4}.${release_dates[2]:4:2}.${release_dates[2]:6:2}"
@@ -99,7 +115,7 @@ mkdir -p "$artifact_dir"
 log "Building maxmind-geolite2 ${package_version}"
 rpmbuild \
     --define "_topdir ${top_dir}" \
-    --define "geolite2_version ${package_version}" \
+    --define "geolite2_version ${metapackage_version}" \
     --define "geolite2_release ${rpm_release}" \
     --define "country_version ${country_version}" \
     --define "country_release ${country_release}" \
@@ -114,7 +130,7 @@ find "${top_dir}/RPMS/noarch" -maxdepth 1 -type f -name '*.rpm' -exec cp --targe
 cat >"${artifact_dir}/build-info.txt" <<EOF
 Package: maxmind-geolite2
 Bundle ID: ${bundle_id}
-Bundle version: ${package_version}
+Metapackage version: ${metapackage_version}
 RPM release: ${rpm_release}
 Country RPM: ${country_version}-${country_release}
 City RPM: ${city_version}-${city_release}
