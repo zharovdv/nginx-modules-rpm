@@ -124,7 +124,7 @@ jobs:
           cat >"${artifact_dir}/RELEASE_NOTES.md" <<EOF
           Signed community RPM packages for the MaxMind GeoLite2 Country, City and ASN databases.
 
-          GeoLite2 data version: ${package_version}
+          GeoLite2 bundle version: ${package_version}
           Signing key fingerprint: ${RPM_GPG_FINGERPRINT}
 
           This product includes GeoLite2 Data created by MaxMind, available from https://www.maxmind.com.

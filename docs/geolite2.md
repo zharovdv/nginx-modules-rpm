@@ -31,13 +31,13 @@ The workflow passes MaxMind credentials directly to the build container. They ar
 
 ## Publishing an update
 
-Open **Actions → Build, sign and release GeoLite2 databases → Run workflow**. No version input is required: the build reads the release date from the verified official archives and uses it as the RPM version.
+Open **Actions → Build, sign and release GeoLite2 databases → Run workflow**. No version input is required. MaxMind can publish the databases on different days, so the RPM bundle version uses the newest release date in the set. The individual release date of every database is recorded in `build-info.txt`.
 
 The workflow:
 
 1. downloads all three official archives and their SHA-256 files over HTTPS;
 2. verifies every archive and validates every MMDB file;
-3. requires the three archives to have the same release date;
+3. records the independent release date of every database;
 4. builds and signs three data RPMs plus the metapackage;
 5. publishes checksums, source hashes, license notice and build provenance;
 6. removes superseded GeoLite2 releases;
