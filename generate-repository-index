@@ -28,7 +28,7 @@ cat >"$REPOSITORY_INDEX_PATH" <<'EOF'
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>NGINX dynamic modules RPM repository</title>
+    <title>NGINX modules and GeoLite2 RPM repository</title>
     <style>
       :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
       body { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem 4rem; line-height: 1.5; }
@@ -45,16 +45,18 @@ cat >"$REPOSITORY_INDEX_PATH" <<'EOF'
     </style>
   </head>
   <body>
-    <h1>NGINX dynamic modules RPM repository</h1>
-    <p class="lead">Signed community packages for official nginx.org Enterprise Linux 9 x86_64 packages.</p>
-    <p class="notice"><strong>Unofficial community project.</strong> Not affiliated with or supported by NGINX, F5 or the module authors.</p>
+    <h1>NGINX modules and GeoLite2 RPM repository</h1>
+    <p class="lead">Signed community packages for Enterprise Linux 9 x86_64.</p>
+    <p class="notice"><strong>Unofficial community project.</strong> Not affiliated with or supported by NGINX, F5, MaxMind or the module authors.</p>
+    <p class="notice"><strong>GeoLite2 terms.</strong> GeoLite2 packages are subject to CC BY-SA 4.0 and the <a href="https://www.maxmind.com/en/geolite/eula">MaxMind GeoLite2 EULA</a>, including attribution, downstream and update obligations.</p>
     <h2>Install</h2>
     <pre><code>sudo curl --fail --silent --show-error --location \
     --output /etc/yum.repos.d/nginx-modules-rpm.repo \
     https://zharovdv.github.io/nginx-modules-rpm/nginx-modules-rpm.repo
 
 sudo dnf install nginx-module-nchan
-# or: sudo dnf install nginx-module-geoip2</code></pre>
+# or: sudo dnf install nginx-module-geoip2
+# optional GeoLite2 databases: sudo dnf install maxmind-geolite2</code></pre>
     <h2>Available packages</h2>
     <table>
       <thead><tr><th>Package</th><th>Version</th><th>Architecture</th><th>Download size</th></tr></thead>

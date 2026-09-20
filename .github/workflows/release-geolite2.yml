@@ -1,0 +1,175 @@
+name: Build, sign and release GeoLite2 databases
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  pages: write
+
+concurrency:
+  group: release-maxmind-geolite2
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release
+    env:
+      BUILDER_IMAGE: nginx-modules-rpm-builder:rl9
+      DOCKER_PLATFORM: linux/amd64
+      PUBLIC_KEY_PATH: keys/RPM-GPG-KEY-nginx-modules-rpm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Load reviewed signing-key fingerprint
+        run: |
+          set -Eeuo pipefail
+
+          fingerprint="$(sed -n 's/^RPM_GPG_FINGERPRINT=//p' pins.env)"
+          fingerprint="${fingerprint^^}"
+
+          if [[ ! "$fingerprint" =~ ^[0-9A-F]{40}$ ]]; then
+              printf "Invalid RPM_GPG_FINGERPRINT in pins.env; expected the full 40-character fingerprint\n" >&2
+              exit 1
+          fi
+
+          echo "RPM_GPG_FINGERPRINT=$fingerprint" >>"$GITHUB_ENV"
+
+      - name: Validate public signing key
+        run: |
+          set -Eeuo pipefail
+
+          [[ -s "$PUBLIC_KEY_PATH" ]]
+          mapfile -t public_key_fingerprints < <(
+              gpg --batch --with-colons --show-keys --fingerprint "$PUBLIC_KEY_PATH" |
+                  awk -F: '$1 == "fpr" { print toupper($10) }'
+          )
+          printf "%s\n" "${public_key_fingerprints[@]}" | grep -Fxq "$RPM_GPG_FINGERPRINT"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          pull: true
+          platforms: "${{ env.DOCKER_PLATFORM }}"
+          tags: "${{ env.BUILDER_IMAGE }}"
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Download, verify and build database RPMs
+        env:
+          MAXMIND_ACCOUNT_ID: "${{ secrets.MAXMIND_ACCOUNT_ID }}"
+          MAXMIND_LICENSE_KEY: "${{ secrets.MAXMIND_LICENSE_KEY }}"
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p dist
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            --volume "${PWD}/dist:/dist" \
+            --env MAXMIND_ACCOUNT_ID \
+            --env MAXMIND_LICENSE_KEY \
+            --env "HOST_UID=$(id -u)" \
+            --env "HOST_GID=$(id -g)" \
+            --entrypoint /usr/local/bin/build-maxmind-geolite2-rpms \
+            "$BUILDER_IMAGE"
+
+          artifact_dir="$(find dist/maxmind-geolite2 -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          [[ -n "$artifact_dir" ]]
+          package_version="$(basename "$artifact_dir")"
+
+          {
+              echo "artifact_dir=$artifact_dir"
+              echo "package_version=$package_version"
+              echo "release_tag=maxmind-geolite2-$package_version"
+          } >>"$GITHUB_ENV"
+
+      - name: Refuse overwrite
+        env:
+          GH_TOKEN: "${{ github.token }}"
+        run: '! gh release view "$release_tag" >/dev/null 2>&1'
+
+      - name: Sign RPMs
+        env:
+          RPM_GPG_PRIVATE_KEY: "${{ secrets.RPM_GPG_PRIVATE_KEY }}"
+          RPM_GPG_KEY_ID: "${{ vars.RPM_GPG_KEY_ID }}"
+        run: |
+          set -Eeuo pipefail
+
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            --volume "${PWD}/dist:/dist" \
+            --env RPM_GPG_PRIVATE_KEY \
+            --env RPM_GPG_KEY_ID \
+            --env RPM_GPG_FINGERPRINT \
+            --env "RPM_DIRECTORY=/dist/${artifact_dir#dist/}" \
+            --entrypoint /usr/local/bin/sign-nginx-module-rpms \
+            "$BUILDER_IMAGE"
+
+      - name: Verify signed artifacts and prepare release notes
+        run: |
+          set -Eeuo pipefail
+
+          (
+              cd "$artifact_dir"
+              sha256sum --check SHA256SUMS
+          )
+
+          cat >"${artifact_dir}/RELEASE_NOTES.md" <<EOF
+          Signed community RPM packages for the MaxMind GeoLite2 Country, City and ASN databases.
+
+          GeoLite2 data version: ${package_version}
+          Signing key fingerprint: ${RPM_GPG_FINGERPRINT}
+
+          This product includes GeoLite2 Data created by MaxMind, available from https://www.maxmind.com.
+          Use and redistribution are subject to CC BY-SA 4.0 and the MaxMind GeoLite2 EULA.
+          See build-info.txt, GEOLITE2-LICENSE.txt and SHA256SUMS for details.
+          EOF
+
+      - name: Attest signed RPM provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "dist/maxmind-geolite2/**/*.rpm"
+
+      - name: Publish immutable release
+        env:
+          GH_TOKEN: "${{ github.token }}"
+        run: |
+          set -Eeuo pipefail
+
+          gh release create "$release_tag" \
+            "$artifact_dir"/*.rpm \
+            "$artifact_dir/build-info.txt" \
+            "$artifact_dir/SHA256SUMS" \
+            packaging/maxmind-geolite2/GEOLITE2-LICENSE.txt \
+            "$PUBLIC_KEY_PATH" \
+            --target "$GITHUB_SHA" \
+            --title "$release_tag" \
+            --notes-file "$artifact_dir/RELEASE_NOTES.md"
+
+      - name: Remove superseded GeoLite2 releases
+        env:
+          GH_TOKEN: "${{ github.token }}"
+        run: |
+          set -Eeuo pipefail
+
+          mapfile -t superseded_tags < <(
+              gh release list --limit 1000 --json tagName \
+                  --jq ".[] | select(.tagName | startswith(\"maxmind-geolite2-\")) | .tagName" |
+                  grep -Fxv "$release_tag" || true
+          )
+
+          for tag in "${superseded_tags[@]}"; do
+              gh release delete "$tag" --cleanup-tag --yes
+          done
+
+  publish-repository:
+    needs: release
+    uses: ./.github/workflows/repository.yml
+    secrets: inherit

@@ -1,4 +1,4 @@
-.PHONY: build geoip2 nchan lint lint-tools clean
+.PHONY: build geoip2 geolite2-data nchan lint lint-tools clean
 
 include pins.env
 
@@ -19,6 +19,17 @@ geoip2: build
 nchan: MODULE=nchan
 nchan: MODULE_REF=$(NCHAN_CI_COMMIT)
 nchan: build
+
+geolite2-data:
+	docker compose build --pull builder
+	docker run --rm \
+		--volume "$(CURDIR)/dist:/dist" \
+		--env MAXMIND_ACCOUNT_ID \
+		--env MAXMIND_LICENSE_KEY \
+		--env "HOST_UID=$$(id -u)" \
+		--env "HOST_GID=$$(id -g)" \
+		--entrypoint /usr/local/bin/build-maxmind-geolite2-rpms \
+		nginx-modules-rpm-builder:rl9
 
 lint:
 	./lint

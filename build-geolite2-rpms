@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${MAXMIND_ACCOUNT_ID:?MAXMIND_ACCOUNT_ID is required}"
+: "${MAXMIND_LICENSE_KEY:?MAXMIND_LICENSE_KEY is required}"
+
+HOST_UID="${HOST_UID:-0}"
+HOST_GID="${HOST_GID:-0}"
+MAXMIND_DOWNLOAD_BASE_URL="${MAXMIND_DOWNLOAD_BASE_URL:-https://download.maxmind.com/geoip/databases}"
+
+die() {
+    printf "ERROR: %s\n" "$*" >&2
+    exit 1
+}
+
+log() {
+    printf "==> %s\n" "$*"
+}
+
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+
+top_dir="${work_dir}/rpmbuild"
+source_dir="${top_dir}/SOURCES"
+spec_file="/workspace/packaging/maxmind-geolite2/maxmind-geolite2.spec"
+license_file="/workspace/packaging/maxmind-geolite2/GEOLITE2-LICENSE.txt"
+editions=(Country City ASN)
+release_dates=()
+
+mkdir -p "$source_dir"
+install -m 0644 "$license_file" "${source_dir}/GEOLITE2-LICENSE.txt"
+
+for edition in "${editions[@]}"; do
+    database="GeoLite2-${edition}"
+    archive="${work_dir}/${database}.tar.gz"
+    checksum_file="${archive}.sha256"
+    download_url="${MAXMIND_DOWNLOAD_BASE_URL}/${database}/download"
+
+    log "Downloading ${database} from MaxMind"
+    curl --fail --silent --show-error --location \
+        --retry 3 \
+        --user "${MAXMIND_ACCOUNT_ID}:${MAXMIND_LICENSE_KEY}" \
+        --output "$archive" \
+        "${download_url}?suffix=tar.gz"
+    curl --fail --silent --show-error --location \
+        --retry 3 \
+        --user "${MAXMIND_ACCOUNT_ID}:${MAXMIND_LICENSE_KEY}" \
+        --output "$checksum_file" \
+        "${download_url}?suffix=tar.gz.sha256"
+
+    expected_sha256="$(grep -Eo '[0-9a-fA-F]{64}' "$checksum_file" | head -n 1)"
+    [[ -n "$expected_sha256" ]] || die "No SHA-256 checksum returned for ${database}"
+    printf "%s  %s\n" "$expected_sha256" "$archive" | sha256sum --check --status ||
+        die "Checksum verification failed for ${database}"
+
+    archive_root="$(tar -tzf "$archive" | awk -F/ 'NR == 1 { root = $1 } END { print root }')"
+    [[ "$archive_root" =~ ^${database}_([0-9]{8})$ ]] ||
+        die "Unexpected archive root for ${database}: ${archive_root}"
+    release_dates+=("${BASH_REMATCH[1]}")
+
+    tar -xzf "$archive" -C "$work_dir"
+    database_file="${work_dir}/${archive_root}/${database}.mmdb"
+    [[ -s "$database_file" ]] || die "${database}.mmdb is missing or empty"
+    mmdblookup --file "$database_file" --ip 8.8.8.8 >/dev/null ||
+        die "MMDB validation failed for ${database}"
+    install -m 0644 "$database_file" "${source_dir}/${database}.mmdb"
+
+    archive_sha256="$(sha256sum "$archive" | cut -d' ' -f1)"
+    printf "%s archive SHA-256: %s\n" "$database" "$archive_sha256" >>"${work_dir}/source-checksums.txt"
+done
+
+for release_date in "${release_dates[@]:1}"; do
+    [[ "$release_date" == "${release_dates[0]}" ]] ||
+        die "MaxMind archives have different release dates: ${release_dates[*]}"
+done
+
+release_date="${release_dates[0]}"
+package_version="${release_date:0:4}.${release_date:4:2}.${release_date:6:2}"
+artifact_dir="/dist/maxmind-geolite2/${package_version}"
+
+rm -rf "$artifact_dir"
+mkdir -p "$artifact_dir"
+
+log "Building maxmind-geolite2 ${package_version}"
+rpmbuild \
+    --define "_topdir ${top_dir}" \
+    --define "geolite2_version ${package_version}" \
+    -bb "$spec_file"
+
+find "${top_dir}/RPMS/noarch" -maxdepth 1 -type f -name '*.rpm' -exec cp --target-directory "$artifact_dir" {} +
+
+cat >"${artifact_dir}/build-info.txt" <<EOF
+Package: maxmind-geolite2
+Package version: ${package_version}
+GeoLite2 release date: ${release_date}
+Source: MaxMind official GeoLite2 download service
+Source URL: ${MAXMIND_DOWNLOAD_BASE_URL}
+License: CC BY-SA 4.0 and MaxMind GeoLite2 EULA
+Build timestamp: $(date --utc +%Y-%m-%dT%H:%M:%SZ)
+EOF
+cat "${work_dir}/source-checksums.txt" >>"${artifact_dir}/build-info.txt"
+
+(
+    cd "$artifact_dir"
+    sha256sum ./*.rpm build-info.txt >SHA256SUMS
+)
+chown -R "${HOST_UID}:${HOST_GID}" "$artifact_dir"
+
+log "Artifacts written to ${artifact_dir}"

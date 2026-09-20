@@ -1,0 +1,21 @@
+This product includes GeoLite2 Data created by MaxMind, available from
+https://www.maxmind.com.
+
+GeoLite2 data is made available under the Creative Commons Attribution-
+ShareAlike 4.0 International License and is subject to the additional terms in
+the MaxMind GeoLite2 End User License Agreement.
+
+License: https://creativecommons.org/licenses/by-sa/4.0/
+GeoLite2 EULA: https://www.maxmind.com/en/geolite/eula
+GeoLite2 information: https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/
+
+Downloading, installing, copying, using or redistributing these database files
+is subject to those terms. In particular, recipients must preserve MaxMind
+attribution, impose the same or substantially similar duties on downstream
+recipients, avoid prohibited uses, promptly update the data, and cease use of
+and destroy an old database version within 30 days after MaxMind releases its
+replacement. Review the current EULA because MaxMind may amend it.
+
+MaxMind and GeoLite2 are trademarks of MaxMind, Inc. This is an unofficial
+community repackaging project and is not affiliated with or supported by
+MaxMind.

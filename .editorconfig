@@ -12,6 +12,11 @@ indent_style = space
 indent_size = 4
 shell_variant = bash
 
+[build-geolite2-rpms]
+indent_style = space
+indent_size = 4
+shell_variant = bash
+
 [sign-rpms]
 indent_style = space
 indent_size = 4

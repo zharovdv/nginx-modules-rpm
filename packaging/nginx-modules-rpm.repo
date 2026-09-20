@@ -1,5 +1,5 @@
 [nginx-modules-rpm]
-name=NGINX dynamic modules for Enterprise Linux 9
+name=NGINX modules and GeoLite2 data for Enterprise Linux 9
 baseurl=https://zharovdv.github.io/nginx-modules-rpm/el9/$basearch/
 enabled=1
 gpgcheck=1

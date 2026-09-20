@@ -31,6 +31,20 @@
   loop: "{{ nginx_modules }}"
   notify: Validate and reload NGINX
 
+- name: Check requested GeoLite2 databases
+  ansible.builtin.assert:
+    that:
+      - nginx_geoip2_databases | difference(['country', 'city', 'asn']) | length == 0
+    fail_msg: nginx_geoip2_databases accepts country, city and asn only
+
+- name: Install GeoLite2 databases
+  ansible.builtin.dnf:
+    name: "maxmind-geolite2-{{ item }}"
+    state: latest
+    update_cache: true
+  loop: "{{ nginx_geoip2_databases }}"
+  notify: Validate and reload NGINX
+
 - name: Remove obsolete module include files
   ansible.builtin.file:
     path: "/usr/share/nginx/modules/50-{{ item }}.conf"

@@ -1,11 +1,10 @@
 # NGINX dynamic modules RPM repository
 
 [![CI](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/ci.yml/badge.svg)](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/ci.yml)
-[![Lint](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/lint.yml/badge.svg)](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/lint.yml)
 [![DNF repository](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/repository.yml/badge.svg)](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/repository.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Signed community RPM packages for third-party NGINX dynamic modules, built against the official nginx.org packages for Enterprise Linux 9.
+Signed community RPM packages for third-party NGINX dynamic modules and optional MaxMind GeoLite2 databases for Enterprise Linux 9.
 
 Supported modules:
 
@@ -21,7 +20,7 @@ Supported platform:
 Packages are bound to the exact nginx.org ABI through `nginx-r<version>`. Nothing is compiled on production servers.
 
 > [!IMPORTANT]
-> These are unofficial community packages. This project is not affiliated with or supported by NGINX, F5, Nchan, GeoIP2, Rocky Linux, AlmaLinux or Red Hat.
+> These are unofficial community packages. This project is not affiliated with or supported by NGINX, F5, Nchan, GeoIP2, MaxMind, Rocky Linux, AlmaLinux or Red Hat.
 
 ## Installation
 
@@ -39,6 +38,18 @@ Install one or both modules:
 sudo dnf install nginx-module-nchan
 sudo dnf install nginx-module-geoip2
 ```
+
+Optional GeoLite2 data packages are available separately:
+
+```bash
+sudo dnf install maxmind-geolite2-country
+sudo dnf install maxmind-geolite2-city
+sudo dnf install maxmind-geolite2-asn
+# or install all three:
+sudo dnf install maxmind-geolite2
+```
+
+The database files are installed below `/usr/share/GeoIP/`. See [`docs/geolite2.md`](docs/geolite2.md) before publishing or deploying them.
 
 Browse available packages, repository metadata and the signing-key fingerprint at:
 
@@ -64,7 +75,7 @@ sudo systemctl reload nginx
 
 ## Ansible
 
-The included role configures the permanent DNF repository, verifies the pinned signing-key fingerprint, installs the requested packages and adds idempotent `load_module` directives.
+The included role configures the permanent DNF repository, verifies the pinned signing-key fingerprint, installs the requested modules and databases, and adds idempotent `load_module` directives.
 
 Copy `ansible/roles/nginx_modules` into your Ansible repository and use [`ansible/playbook.example.yml`](ansible/playbook.example.yml). The role deploys packages only; it never builds on the target host and never follows a version-specific GitHub Release URL.
 
@@ -129,6 +140,7 @@ The same checks run automatically for every pull request and push to `main`.
 - reviewed CI and releases use immutable values committed in `pins.env`;
 - discovery runs may inspect moving upstream refs but have read-only permissions;
 - `release.yml` manually builds, tests, signs and publishes one reviewed module;
+- `release-geolite2.yml` downloads, verifies, packages, signs and publishes all three GeoLite2 databases;
 - `repository.yml` rebuilds the complete signed DNF repository from all GitHub Releases and publishes it through GitHub Pages;
 - external Actions and the base image are pinned to immutable commits or digests;
 - Dependabot proposes dependency updates as reviewable pull requests.
