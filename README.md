@@ -1,7 +1,6 @@
 # NGINX dynamic modules RPM repository
 
 [![CI](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/ci.yml/badge.svg)](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/ci.yml)
-[![DNF repository](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/repository.yml/badge.svg)](https://github.com/zharovdv/nginx-modules-rpm/actions/workflows/repository.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Signed community RPM packages for third-party NGINX dynamic modules and optional MaxMind GeoLite2 databases for Enterprise Linux 9.
