@@ -1,0 +1,99 @@
+name: Propose upstream pin updates
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-upstream-pins
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve upstream releases
+        id: pins
+        run: |
+          set -Eeuo pipefail
+          chmod 0755 update-pins
+          ./update-pins
+
+      - name: Create or update pull request
+        if: steps.pins.outputs.changed == 'true'
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          UPDATE_BRANCH: automation/update-upstream-pins
+          NGINX_VERSION: "${{ steps.pins.outputs.nginx_version }}"
+          PKG_OSS_TAG: "${{ steps.pins.outputs.pkg_oss_tag }}"
+          PKG_OSS_COMMIT: "${{ steps.pins.outputs.pkg_oss_commit }}"
+          NCHAN_VERSION: "${{ steps.pins.outputs.nchan_version }}"
+          NCHAN_COMMIT: "${{ steps.pins.outputs.nchan_commit }}"
+          GEOIP2_VERSION: "${{ steps.pins.outputs.geoip2_version }}"
+          GEOIP2_COMMIT: "${{ steps.pins.outputs.geoip2_commit }}"
+        run: |
+          set -Eeuo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          push_options=()
+          if git fetch origin "refs/heads/${UPDATE_BRANCH}"; then
+              remote_commit="$(git rev-parse FETCH_HEAD)"
+              push_options+=("--force-with-lease=refs/heads/${UPDATE_BRANCH}:${remote_commit}")
+          fi
+          git switch --create "$UPDATE_BRANCH"
+          git add pins.env
+          git commit --message "chore(deps): update upstream pins"
+          git push "${push_options[@]}" origin "HEAD:refs/heads/${UPDATE_BRANCH}"
+
+          cat >"$RUNNER_TEMP/pull-request-body.md" <<EOF
+          Automated proposal for reviewed immutable upstream pins.
+
+          | Dependency | Release | Commit |
+          | --- | --- | --- |
+          | NGINX / pkg-oss | ${NGINX_VERSION} / ${PKG_OSS_TAG} | \`${PKG_OSS_COMMIT}\` |
+          | Nchan | ${NCHAN_VERSION} | \`${NCHAN_COMMIT}\` |
+          | GeoIP2 module | ${GEOIP2_VERSION} | \`${GEOIP2_COMMIT}\` |
+
+          Merge only after the dispatched build and lint checks pass. This workflow never signs or publishes RPMs.
+          EOF
+
+          pull_request_number="$(
+              gh pr list \
+                  --head "$UPDATE_BRANCH" \
+                  --base main \
+                  --state open \
+                  --json number \
+                  --jq '.[0].number // empty'
+          )"
+
+          if [[ -n "$pull_request_number" ]]; then
+              gh api \
+                  --method PATCH \
+                  "repos/${GITHUB_REPOSITORY}/pulls/${pull_request_number}" \
+                  --field "title=chore(deps): update upstream pins" \
+                  --field "body=$(<"$RUNNER_TEMP/pull-request-body.md")" \
+                  >/dev/null
+          else
+              gh pr create \
+                  --head "$UPDATE_BRANCH" \
+                  --base main \
+                  --title "chore(deps): update upstream pins" \
+                  --body-file "$RUNNER_TEMP/pull-request-body.md"
+          fi
+
+          gh workflow run ci.yml --ref "$UPDATE_BRANCH" --field mode=reviewed
+          gh workflow run lint.yml --ref "$UPDATE_BRANCH"
+
+      - name: Report current pins
+        if: steps.pins.outputs.changed != 'true'
+        run: echo "No upstream pin updates are available" >>"$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repository_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+pins_file="${repository_dir}/pins.env"
+
+die() {
+    printf "ERROR: %s\n" "$*" >&2
+    exit 1
+}
+
+log() {
+    printf "==> %s\n" "$*"
+}
+
+list_tags() {
+    local repository_url="$1"
+    local remote_refs
+
+    remote_refs="$(git ls-remote --tags --refs "$repository_url")" ||
+        die "Unable to list tags from ${repository_url}"
+    [[ -n "$remote_refs" ]] || die "No tags found in ${repository_url}"
+    printf "%s\n" "$remote_refs" | awk '{ sub("refs/tags/", "", $2); print $2 }'
+}
+
+latest_stable_tag() {
+    local repository_url="$1"
+    local optional_v_prefix="$2"
+    local latest_tag
+    local tags
+    local pattern
+
+    tags="$(list_tags "$repository_url")"
+    if [[ "$optional_v_prefix" == true ]]; then
+        pattern='^v?[0-9]+[.][0-9]+[.][0-9]+$'
+    else
+        pattern='^[0-9]+[.][0-9]+([.][0-9]+)?$'
+    fi
+
+    latest_tag="$(grep -E "$pattern" <<<"$tags" | sort -V | tail -n 1)"
+    [[ -n "$latest_tag" ]] || die "No stable release tags found in ${repository_url}"
+    printf "%s\n" "$latest_tag"
+}
+
+latest_stable_nginx_tag() {
+    local repository_url="$1"
+    local tag
+    local version
+    local minor
+    local candidates=()
+
+    while IFS= read -r tag; do
+        if [[ "$tag" =~ ^([0-9]+)[.]([0-9]+)[.]([0-9]+)-[0-9]+$ ]]; then
+            minor="${BASH_REMATCH[2]}"
+            if ((minor % 2 == 0)); then
+                version="${BASH_REMATCH[1]}.${minor}.${BASH_REMATCH[3]}"
+                candidates+=("${version} ${tag}")
+            fi
+        fi
+    done < <(list_tags "$repository_url")
+
+    [[ "${#candidates[@]}" -gt 0 ]] || die "No stable NGINX pkg-oss tags found"
+    printf "%s\n" "${candidates[@]}" | sort -V | tail -n 1
+}
+
+resolve_tag_commit() {
+    local repository_url="$1"
+    local tag="$2"
+    local remote_refs
+    local commit
+
+    remote_refs="$(
+        git ls-remote "$repository_url" \
+            "refs/tags/${tag}" \
+            "refs/tags/${tag}^{}"
+    )" || die "Unable to resolve ${repository_url} tag ${tag}"
+
+    commit="$(awk '$2 ~ /\^\{\}$/ { print $1; exit }' <<<"$remote_refs")"
+    if [[ -z "$commit" ]]; then
+        commit="$(awk -v ref="refs/tags/${tag}" '$2 == ref { print $1; exit }' <<<"$remote_refs")"
+    fi
+    [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "Tag ${tag} did not resolve to a full commit SHA"
+    printf "%s\n" "$commit"
+}
+
+replace_pin() {
+    local name="$1"
+    local value="$2"
+
+    [[ "$(grep -Ec "^${name}=" "$pins_file")" -eq 1 ]] || die "Expected exactly one ${name} in pins.env"
+    sed -i "s/^${name}=.*/${name}=${value}/" "$pins_file"
+}
+
+for command in awk git grep sed sort tail; do
+    command -v "$command" >/dev/null || die "Required command not found: ${command}"
+done
+[[ -f "$pins_file" ]] || die "pins.env not found"
+
+pkg_oss_repository="https://github.com/nginx/pkg-oss.git"
+nchan_repository="https://github.com/slact/nchan.git"
+geoip2_repository="https://github.com/leev/ngx_http_geoip2_module.git"
+
+log "Resolving latest stable NGINX and matching pkg-oss tag"
+read -r nginx_version pkg_oss_tag < <(latest_stable_nginx_tag "$pkg_oss_repository")
+pkg_oss_commit="$(resolve_tag_commit "$pkg_oss_repository" "$pkg_oss_tag")"
+
+log "Resolving latest stable Nchan tag"
+nchan_tag="$(latest_stable_tag "$nchan_repository" true)"
+nchan_version="${nchan_tag#v}"
+nchan_commit="$(resolve_tag_commit "$nchan_repository" "$nchan_tag")"
+
+log "Resolving latest stable GeoIP2 module tag"
+geoip2_tag="$(latest_stable_tag "$geoip2_repository" false)"
+geoip2_version="$geoip2_tag"
+geoip2_commit="$(resolve_tag_commit "$geoip2_repository" "$geoip2_tag")"
+
+replace_pin NGINX_STABLE_CI_VERSION "$nginx_version"
+replace_pin PKG_OSS_CI_COMMIT "$pkg_oss_commit"
+replace_pin NCHAN_CI_COMMIT "$nchan_commit"
+replace_pin GEOIP2_CI_COMMIT "$geoip2_commit"
+
+if git -C "$repository_dir" diff --quiet -- pins.env; then
+    changed=false
+else
+    changed=true
+fi
+
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    {
+        echo "changed=$changed"
+        echo "nginx_version=$nginx_version"
+        echo "pkg_oss_tag=$pkg_oss_tag"
+        echo "pkg_oss_commit=$pkg_oss_commit"
+        echo "nchan_version=$nchan_version"
+        echo "nchan_commit=$nchan_commit"
+        echo "geoip2_version=$geoip2_version"
+        echo "geoip2_commit=$geoip2_commit"
+    } >>"$GITHUB_OUTPUT"
+fi
+
+log "NGINX ${nginx_version}, pkg-oss ${pkg_oss_tag} (${pkg_oss_commit})"
+log "Nchan ${nchan_version} (${nchan_commit})"
+log "GeoIP2 ${geoip2_version} (${geoip2_commit})"
+log "pins.env changed: ${changed}"

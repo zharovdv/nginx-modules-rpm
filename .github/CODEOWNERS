@@ -5,6 +5,8 @@
 /.github/workflows/ @zharovdv
 /Dockerfile @zharovdv
 /build @zharovdv
+/build-geolite2-rpms @zharovdv
 /create-repository @zharovdv
 /generate-repository-index @zharovdv
 /sign-rpms @zharovdv
+/update-pins @zharovdv

@@ -4,25 +4,29 @@ on:
   pull_request:
   push:
     branches: [main]
-  schedule:
-    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
+      mode:
+        description: Validate reviewed pins or run discovery against moving refs
+        type: choice
+        required: true
+        default: reviewed
+        options: [reviewed, discovery]
       nginx_repo:
         description: Repository channel matching the selected pkg-oss ref
         type: choice
-        required: true
+        required: false
         default: mainline
         options: [stable, mainline]
       nginx_version:
         description: Use auto or the exact version packaged by pkg-oss
         type: string
-        required: true
+        required: false
         default: auto
       pkg_oss_ref:
         description: Discovery ref; this workflow never publishes
         type: string
-        required: true
+        required: false
         default: master
 
 permissions:
@@ -45,14 +49,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Load reviewed repository pins
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        if: github.event_name == 'pull_request' || github.event_name == 'push' || inputs.mode == 'reviewed'
         run: |
           set -Eeuo pipefail
           grep -E '^(PKG_OSS_CI_COMMIT|NCHAN_CI_COMMIT|GEOIP2_CI_COMMIT)=[0-9a-f]{40}$' pins.env >>"$GITHUB_ENV"
           grep -E '^NGINX_STABLE_CI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' pins.env >>"$GITHUB_ENV"
 
       - name: Select reviewed CI inputs
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        if: github.event_name == 'pull_request' || github.event_name == 'push' || inputs.mode == 'reviewed'
         run: |
           set -Eeuo pipefail
           if [[ "$MODULE" == nchan ]]; then
@@ -67,19 +71,8 @@ jobs:
             echo "PKG_OSS_REF=$PKG_OSS_CI_COMMIT"
           } >>"$GITHUB_ENV"
 
-      - name: Select scheduled discovery inputs
-        if: github.event_name == 'schedule'
-        run: |
-          set -Eeuo pipefail
-          {
-            echo "MODULE_REF=latest-stable"
-            echo "NGINX_REPO=mainline"
-            echo "NGINX_VERSION=auto"
-            echo "PKG_OSS_REF=master"
-          } >>"$GITHUB_ENV"
-
       - name: Select manual discovery inputs
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'discovery'
         run: |
           set -Eeuo pipefail
           {
@@ -96,7 +89,7 @@ jobs:
           [[ "$NGINX_REPO" == stable || "$NGINX_REPO" == mainline ]]
           [[ "$NGINX_VERSION" == auto || "$NGINX_VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]
           [[ -n "$PKG_OSS_REF" ]]
-          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == push ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == push || "${{ inputs.mode }}" == reviewed ]]; then
             [[ "$PKG_OSS_REF" =~ ^[0-9a-f]{40}$ ]]
           fi
 

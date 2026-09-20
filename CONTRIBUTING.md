@@ -37,7 +37,7 @@ PATH="$PWD/.cache/lint-tools:$PATH" make lint
 
 ## Updating existing modules
 
-Update immutable pins in `pins.env` through a reviewed pull request. The NGINX version and its matching `pkg-oss` commit must be updated together. Never replace reviewed release pins with moving branches or tags.
+The weekly upstream updater normally proposes immutable pin changes in a pull request. A manual update is also allowed, but the NGINX version and its matching `pkg-oss` commit must be updated together. Never replace reviewed release pins with moving branches or tags.
 
 The pull request should identify:
 

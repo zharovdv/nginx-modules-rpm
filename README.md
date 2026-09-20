@@ -135,8 +135,9 @@ The same checks run automatically for every pull request and push to `main`.
 
 ## Automation
 
-- `ci.yml` builds and tests both modules on pull requests, pushes and daily discovery runs;
+- `ci.yml` builds and tests both modules on pull requests and pushes, and supports manual discovery runs;
 - `lint.yml` checks shell code, formatting and GitHub Actions workflows on pull requests and pushes;
+- `update-pins.yml` checks upstream releases weekly and proposes reviewed pin changes in a pull request;
 - reviewed CI and releases use immutable values committed in `pins.env`;
 - discovery runs may inspect moving upstream refs but have read-only permissions;
 - `release.yml` manually builds, tests, signs and publishes one reviewed module;
@@ -146,6 +147,7 @@ The same checks run automatically for every pull request and push to `main`.
 - Dependabot proposes dependency updates as reviewable pull requests.
 
 Signing-key creation, backup, GitHub configuration and rotation are documented in [`docs/signing.md`](docs/signing.md).
+Automated upstream checks, pull requests and repository settings are documented in [`docs/updating.md`](docs/updating.md).
 
 ## Contributing and support
 

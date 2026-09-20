@@ -18,6 +18,7 @@ shell_files=(
     install-lint-tools
     lint
     sign-rpms
+    update-pins
     modules/geoip2/smoke-test.sh
     modules/nchan/smoke-test.sh
 )
