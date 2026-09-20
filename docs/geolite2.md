@@ -32,21 +32,21 @@ The discovery environment can read the free databases but cannot sign or publish
 
 ## Publishing an update
 
-The workflow checks MaxMind once a day and can also be started manually through **Actions → Build, sign and release GeoLite2 databases → Run workflow**. No version input is required. If the current bundle is already published, the workflow exits before building and does not request release approval.
+The workflow checks MaxMind once a day and can also be started manually through **Actions → Build, sign and release GeoLite2 databases → Run workflow**. No version input is required. If the current bundle is already published, the workflow exits before building and does not request release approval. Use the manual `force_rebuild` option only for an intentional packaging-only revision; it keeps unchanged data RPMs and increments the metapackage RPM release.
 
 When at least one database changes, the discovery job builds the current bundle. It then replaces unchanged data RPMs with the byte-for-byte identical signed RPMs from the previous release. The protected `release` job waits for approval, verifies the bundle, signs only new RPMs and publishes it.
 
-Each data package has an independent version based only on that database's release date. Its RPM release also contains a prefix of that database archive's SHA-256, so corrected content published under the same date still produces a new NEVRA. For example:
+Each data package has an independent version based only on that database's release date and a numeric RPM release. If MaxMind corrects an archive without changing its date, the RPM release increments from `-1` to `-2`. For example:
 
-- `maxmind-geolite2-country-2026.09.18-1.<hash>.el9.noarch`;
-- `maxmind-geolite2-city-2026.09.18-1.<hash>.el9.noarch`;
-- `maxmind-geolite2-asn-2026.09.19-1.<hash>.el9.noarch`.
+- `maxmind-geolite2-country-2026.09.18-1.el9.noarch`;
+- `maxmind-geolite2-city-2026.09.18-1.el9.noarch`;
+- `maxmind-geolite2-asn-2026.09.19-1.el9.noarch`.
 
-The `maxmind-geolite2` metapackage uses the newest database date plus a bundle sequence, for example `2026.09.20.1-1`. If another database changes while the newest date stays the same, the next metapackage version is `2026.09.20.2-1`. The sequence resets to `.1` when the newest date advances. The GitHub release tag uses the same readable version, for example `maxmind-geolite2-2026.09.20.1`.
+The `maxmind-geolite2` metapackage uses the newest database date plus a bundle sequence, for example `2026.09.20.1-1`. If another database changes while the newest date stays the same, the next metapackage version is `2026.09.20.2-1`. The sequence resets to `.1` when the newest date advances. Its RPM release increments only when packaging changes without changing the database bundle. The GitHub release tag contains the complete version and release, for example `maxmind-geolite2-2026.09.20.1-1`.
 
 The exact three-database state remains in `build-info.txt` and `SHA256SUMS`. Consequently, when only ASN changes, DNF upgrades ASN and the small metapackage; Country and City retain their existing NEVRA and exact signed RPM bytes. Individual dates and source hashes are recorded in `build-info.txt`.
 
-The first run after upgrading from the legacy composite RPM release automatically republishes the current bundle once with the readable metapackage version. It reuses the existing signed data RPMs and removes the superseded release only after the replacement is published. Later runs with the same bundle exit without requesting approval.
+The first run after upgrading from legacy hash-based RPM releases automatically republishes the current bundle once with numeric RPM releases. Existing hash-based data packages become numeric release `-2`, which sorts newer in RPM version ordering. Future database dates start again at `-1`. The superseded release is removed only after the replacement is published. Later runs with the same bundle exit without requesting approval.
 
 The workflow:
 

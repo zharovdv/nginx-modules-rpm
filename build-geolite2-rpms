@@ -85,28 +85,89 @@ bundle_digest="$(printf "%s\n" "${archive_sha256s[@]}" | sha256sum | cut -d' ' -
 bundle_revision="${release_dates[0]}.${release_dates[1]}.${release_dates[2]}.${bundle_digest:0:12}"
 bundle_id="${package_version}-${bundle_revision}"
 bundle_sequence=1
+rpm_release=1
+previous_bundle_id=""
+
+if [[ -n "${PREVIOUS_BUILD_INFO_PATH:-}" && -f "$PREVIOUS_BUILD_INFO_PATH" ]]; then
+    previous_bundle_id="$(sed -n 's/^Bundle ID: //p' "$PREVIOUS_BUILD_INFO_PATH")"
+fi
 
 if [[ -n "${PREVIOUS_RPM_DIRECTORY:-}" && -d "$PREVIOUS_RPM_DIRECTORY" ]]; then
     while IFS= read -r previous_rpm; do
         [[ "$(rpm -qp --queryformat '%{NAME}' "$previous_rpm")" == maxmind-geolite2 ]] || continue
 
         previous_version="$(rpm -qp --queryformat '%{VERSION}' "$previous_rpm")"
+        previous_release="$(rpm -qp --queryformat '%{RELEASE}' "$previous_rpm")"
+        previous_release="${previous_release%.el9}"
         previous_sequence="${previous_version#"${package_version}."}"
         if [[ "$previous_version" == "${package_version}."* && "$previous_sequence" =~ ^[0-9]+$ ]]; then
-            bundle_sequence="$((previous_sequence + 1))"
+            if [[ "$previous_bundle_id" == "$bundle_id" && "$previous_release" =~ ^[0-9]+$ ]]; then
+                bundle_sequence="$previous_sequence"
+                rpm_release="$((previous_release + 1))"
+            else
+                bundle_sequence="$((previous_sequence + 1))"
+            fi
         fi
         break
     done < <(find "$PREVIOUS_RPM_DIRECTORY" -maxdepth 1 -type f -name 'maxmind-geolite2-*.rpm' -print | sort)
 fi
 
 metapackage_version="${package_version}.${bundle_sequence}"
-rpm_release=1
 country_version="${release_dates[0]:0:4}.${release_dates[0]:4:2}.${release_dates[0]:6:2}"
 city_version="${release_dates[1]:0:4}.${release_dates[1]:4:2}.${release_dates[1]:6:2}"
 asn_version="${release_dates[2]:0:4}.${release_dates[2]:4:2}.${release_dates[2]:6:2}"
-country_release="1.${archive_sha256s[0]:0:12}"
-city_release="1.${archive_sha256s[1]:0:12}"
-asn_release="1.${archive_sha256s[2]:0:12}"
+
+data_release() {
+    local package_name="$1"
+    local package_version_target="$2"
+    local archive_sha256="$3"
+    local database="$4"
+    local previous_archive_sha256=""
+    local previous_package_release
+    local previous_package_version
+    local previous_rpm
+
+    if [[ -n "${PREVIOUS_BUILD_INFO_PATH:-}" && -f "$PREVIOUS_BUILD_INFO_PATH" ]]; then
+        previous_archive_sha256="$(
+            sed -n "s/^${database} archive SHA-256: //p" "$PREVIOUS_BUILD_INFO_PATH"
+        )"
+    fi
+
+    if [[ -n "${PREVIOUS_RPM_DIRECTORY:-}" && -d "$PREVIOUS_RPM_DIRECTORY" ]]; then
+        while IFS= read -r previous_rpm; do
+            [[ "$(rpm -qp --queryformat '%{NAME}' "$previous_rpm")" == "$package_name" ]] || continue
+
+            previous_package_version="$(rpm -qp --queryformat '%{VERSION}' "$previous_rpm")"
+            if [[ "$previous_package_version" == "$package_version_target" ]]; then
+                previous_package_release="$(rpm -qp --queryformat '%{RELEASE}' "$previous_rpm")"
+                previous_package_release="${previous_package_release%.el9}"
+
+                if [[ "$previous_package_release" =~ ^[0-9]+$ ]]; then
+                    if [[ "$previous_archive_sha256" == "$archive_sha256" ]]; then
+                        printf "%s\n" "$previous_package_release"
+                    else
+                        printf "%s\n" "$((previous_package_release + 1))"
+                    fi
+                else
+                    printf "2\n"
+                fi
+                return
+            fi
+        done < <(find "$PREVIOUS_RPM_DIRECTORY" -maxdepth 1 -type f -name '*.rpm' -print | sort)
+    fi
+
+    printf "1\n"
+}
+
+country_release="$(
+    data_release maxmind-geolite2-country "$country_version" "${archive_sha256s[0]}" GeoLite2-Country
+)"
+city_release="$(
+    data_release maxmind-geolite2-city "$city_version" "${archive_sha256s[1]}" GeoLite2-City
+)"
+asn_release="$(
+    data_release maxmind-geolite2-asn "$asn_version" "${archive_sha256s[2]}" GeoLite2-ASN
+)"
 artifact_dir="/dist/maxmind-geolite2/${bundle_id}"
 
 rm -rf "$artifact_dir"

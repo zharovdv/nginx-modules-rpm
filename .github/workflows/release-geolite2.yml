@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "37 5 * * *"
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: Rebuild packaging for the current database bundle
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -47,6 +53,7 @@ jobs:
         env:
           GH_TOKEN: "${{ github.token }}"
           EXPECTED_BUNDLE_ID: "${{ steps.databases.outputs.bundle_id }}"
+          FORCE_REBUILD: "${{ inputs.force_rebuild || false }}"
         run: |
           set -Eeuo pipefail
 
@@ -57,6 +64,8 @@ jobs:
 
           published_bundle_id=""
           published_metapackage_version=""
+          published_data_releases_are_numeric=true
+          : >previous-build-info.txt
           if [[ "${#previous_tags[@]}" -gt 0 ]]; then
               gh release download "${previous_tags[0]}" \
                   --pattern build-info.txt \
@@ -65,11 +74,19 @@ jobs:
               published_metapackage_version="$(
                   sed -n 's/^Metapackage version: //p' previous-build-info.txt
               )"
+              for database in Country City ASN; do
+                  data_evr="$(sed -n "s/^${database} RPM: //p" previous-build-info.txt)"
+                  if [[ ! "$data_evr" =~ ^[0-9]+([.][0-9]+){2}-[0-9]+$ ]]; then
+                      published_data_releases_are_numeric=false
+                  fi
+              done
           fi
 
           if
-              [[ "$published_bundle_id" == "$EXPECTED_BUNDLE_ID" ]] &&
-                  [[ "$published_metapackage_version" =~ ^[0-9]+([.][0-9]+){3}$ ]]
+              [[ "$FORCE_REBUILD" != true ]] &&
+                  [[ "$published_bundle_id" == "$EXPECTED_BUNDLE_ID" ]] &&
+                  [[ "$published_metapackage_version" =~ ^[0-9]+([.][0-9]+){3}$ ]] &&
+                  [[ "$published_data_releases_are_numeric" == true ]]
           then
               echo "update_available=false" >>"$GITHUB_OUTPUT"
               echo "GeoLite2 bundle ${EXPECTED_BUNDLE_ID} is already published" >>"$GITHUB_STEP_SUMMARY"
@@ -123,10 +140,12 @@ jobs:
             --platform "$DOCKER_PLATFORM" \
             --volume "${PWD}/dist:/dist" \
             --volume "${PWD}/previous-geolite2-rpms:/previous-geolite2-rpms:ro" \
+            --volume "${PWD}/previous-build-info.txt:/previous-build-info.txt:ro" \
             --env MAXMIND_ACCOUNT_ID \
             --env MAXMIND_LICENSE_KEY \
             --env "HOST_UID=$(id -u)" \
             --env "HOST_GID=$(id -g)" \
+            --env PREVIOUS_BUILD_INFO_PATH=/previous-build-info.txt \
             --env PREVIOUS_RPM_DIRECTORY=/previous-geolite2-rpms \
             --entrypoint /usr/local/bin/build-maxmind-geolite2-rpms \
             "$BUILDER_IMAGE"
@@ -166,14 +185,16 @@ jobs:
           bundle_id="$(basename "$artifact_dir")"
           [[ "$bundle_id" == "$EXPECTED_BUNDLE_ID" ]]
           metapackage_version="$(sed -n 's/^Metapackage version: //p' "${artifact_dir}/build-info.txt")"
+          rpm_release="$(sed -n 's/^RPM release: //p' "${artifact_dir}/build-info.txt")"
           [[ "$metapackage_version" =~ ^[0-9]+([.][0-9]+){3}$ ]]
+          [[ "$rpm_release" =~ ^[0-9]+$ ]]
 
           {
               echo "publish=true"
               echo "artifact_dir=$artifact_dir"
               echo "bundle_id=$bundle_id"
               echo "package_version=$metapackage_version"
-              echo "release_tag=maxmind-geolite2-${metapackage_version}"
+              echo "release_tag=maxmind-geolite2-${metapackage_version}-${rpm_release}"
           } >>"$GITHUB_OUTPUT"
 
       - name: Upload unsigned bundle for protected release
