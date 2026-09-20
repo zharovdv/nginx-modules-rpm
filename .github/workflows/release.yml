@@ -207,6 +207,7 @@ jobs:
           RPM_GPG_KEY_ID: "${{ vars.RPM_GPG_KEY_ID }}"
         run: |
           set -Eeuo pipefail
+          chmod 0755 prepare-repository
           ./prepare-repository
 
       - name: Configure GitHub Pages
