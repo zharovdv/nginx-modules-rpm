@@ -7,19 +7,21 @@ set -Eeuo pipefail
 MAXMIND_DOWNLOAD_BASE_URL="${MAXMIND_DOWNLOAD_BASE_URL:-https://download.maxmind.com/geoip/databases}"
 editions=(Country City ASN)
 release_dates=()
+archive_sha256s=()
 
 die() {
     printf "ERROR: %s\n" "$*" >&2
     exit 1
 }
 
-for command in curl grep; do
+for command in curl cut grep sha256sum tail tr; do
     command -v "$command" >/dev/null || die "Required command not found: ${command}"
 done
 
 for edition in "${editions[@]}"; do
     database="GeoLite2-${edition}"
     download_url="${MAXMIND_DOWNLOAD_BASE_URL}/${database}/download?suffix=tar.gz"
+    checksum_url="${MAXMIND_DOWNLOAD_BASE_URL}/${database}/download?suffix=tar.gz.sha256"
     headers="$(
         curl --fail --silent --show-error --location --head \
             --retry 3 \
@@ -36,6 +38,17 @@ for edition in "${editions[@]}"; do
     [[ "$filename" =~ ^${database}_([0-9]{8})[.]tar[.]gz$ ]] ||
         die "Unable to determine the ${database} release date"
     release_dates+=("${BASH_REMATCH[1]}")
+
+    checksum="$(
+        curl --fail --silent --show-error --location \
+            --retry 3 \
+            --user "${MAXMIND_ACCOUNT_ID}:${MAXMIND_LICENSE_KEY}" \
+            "$checksum_url" |
+            grep -Eo '[0-9a-fA-F]{64}' |
+            tail -n 1
+    )" || die "Unable to query the ${database} checksum"
+    [[ "$checksum" =~ ^[0-9a-fA-F]{64}$ ]] || die "Invalid ${database} checksum"
+    archive_sha256s+=("${checksum,,}")
 done
 
 bundle_release_date="${release_dates[0]}"
@@ -46,7 +59,8 @@ for database_release_date in "${release_dates[@]:1}"; do
 done
 
 package_version="${bundle_release_date:0:4}.${bundle_release_date:4:2}.${bundle_release_date:6:2}"
-bundle_revision="${release_dates[0]}.${release_dates[1]}.${release_dates[2]}"
+bundle_digest="$(printf "%s\n" "${archive_sha256s[@]}" | sha256sum | cut -d' ' -f1)"
+bundle_revision="${release_dates[0]}.${release_dates[1]}.${release_dates[2]}.${bundle_digest:0:12}"
 bundle_id="${package_version}-${bundle_revision}"
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
@@ -54,6 +68,9 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
         echo "country_release_date=${release_dates[0]}"
         echo "city_release_date=${release_dates[1]}"
         echo "asn_release_date=${release_dates[2]}"
+        echo "country_archive_sha256=${archive_sha256s[0]}"
+        echo "city_archive_sha256=${archive_sha256s[1]}"
+        echo "asn_archive_sha256=${archive_sha256s[2]}"
         echo "package_version=$package_version"
         echo "bundle_revision=$bundle_revision"
         echo "bundle_id=$bundle_id"
@@ -64,4 +81,5 @@ fi
 printf "GeoLite2 Country: %s\n" "${release_dates[0]}"
 printf "GeoLite2 City: %s\n" "${release_dates[1]}"
 printf "GeoLite2 ASN: %s\n" "${release_dates[2]}"
+printf "Bundle digest: %s\n" "$bundle_digest"
 printf "Bundle ID: %s\n" "$bundle_id"

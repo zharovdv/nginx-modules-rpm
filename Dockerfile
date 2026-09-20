@@ -13,6 +13,7 @@ COPY build /usr/local/bin/build-nginx-module
 COPY build-geolite2-rpms /usr/local/bin/build-maxmind-geolite2-rpms
 COPY create-repository /usr/local/bin/create-nginx-modules-repository
 COPY generate-repository-index /usr/local/bin/generate-nginx-modules-repository-index
+COPY reuse-geolite2-rpms /usr/local/bin/reuse-maxmind-geolite2-rpms
 COPY sign-rpms /usr/local/bin/sign-nginx-module-rpms
 COPY modules /workspace/modules
 COPY packaging/maxmind-geolite2 /workspace/packaging/maxmind-geolite2
@@ -22,6 +23,7 @@ RUN chmod 0755 \
         /usr/local/bin/build-maxmind-geolite2-rpms \
         /usr/local/bin/create-nginx-modules-repository \
         /usr/local/bin/generate-nginx-modules-repository-index \
+        /usr/local/bin/reuse-maxmind-geolite2-rpms \
         /usr/local/bin/sign-nginx-module-rpms \
         /workspace/modules/*/smoke-test.sh
 

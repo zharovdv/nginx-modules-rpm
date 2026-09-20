@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${RPM_DIRECTORY:?RPM_DIRECTORY is required}"
+: "${PREVIOUS_RPM_DIRECTORY:?PREVIOUS_RPM_DIRECTORY is required}"
+
+[[ -d "$RPM_DIRECTORY" ]] || {
+    printf "RPM directory not found: %s\n" "$RPM_DIRECTORY" >&2
+    exit 1
+}
+[[ -d "$PREVIOUS_RPM_DIRECTORY" ]] || exit 0
+
+mapfile -t current_rpms < <(find "$RPM_DIRECTORY" -maxdepth 1 -type f -name '*.rpm' -print | sort)
+[[ "${#current_rpms[@]}" -gt 0 ]]
+
+for current_rpm in "${current_rpms[@]}"; do
+    package_name="$(rpm -qp --queryformat '%{NAME}' "$current_rpm")"
+    case "$package_name" in
+        maxmind-geolite2-country | maxmind-geolite2-city | maxmind-geolite2-asn) ;;
+        *) continue ;;
+    esac
+
+    previous_rpm="${PREVIOUS_RPM_DIRECTORY}/$(basename "$current_rpm")"
+    if [[ -f "$previous_rpm" ]]; then
+        cp --preserve=mode,timestamps "$previous_rpm" "$current_rpm"
+        printf "Reused signed RPM: %s\n" "$(basename "$current_rpm")" >>"${RPM_DIRECTORY}/build-info.txt"
+    fi
+done

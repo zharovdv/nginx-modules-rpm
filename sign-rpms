@@ -48,6 +48,17 @@ EOF
 mapfile -t rpms < <(find "$RPM_DIRECTORY" -maxdepth 1 -type f -name '*.rpm' -print | sort)
 [[ "${#rpms[@]}" -gt 0 ]]
 for rpm_file in "${rpms[@]}"; do
+    existing_signature_check="$(rpmkeys --checksig "$rpm_file" 2>&1 || true)"
+    if grep -Eq 'digests signatures OK$' <<<"$existing_signature_check"; then
+        printf "Already signed and verified: %s\n" "$rpm_file"
+        continue
+    fi
+    if grep -Eqi 'signature|NOKEY|NOT OK' <<<"$existing_signature_check"; then
+        printf "Existing RPM signature is not valid for the expected key:\n%s\n" \
+            "$existing_signature_check" >&2
+        exit 1
+    fi
+
     rpmsign --addsign "$rpm_file"
     if ! signature_check="$(rpmkeys --checksig "$rpm_file" 2>&1)"; then
         printf "%s\n" "$signature_check" >&2

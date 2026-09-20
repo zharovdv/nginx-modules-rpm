@@ -10,16 +10,18 @@ Source1:        GeoLite2-City.mmdb
 Source2:        GeoLite2-ASN.mmdb
 Source3:        GEOLITE2-LICENSE.txt
 
-Requires:       maxmind-geolite2-country = %{version}-%{release}
-Requires:       maxmind-geolite2-city = %{version}-%{release}
-Requires:       maxmind-geolite2-asn = %{version}-%{release}
+Requires:       maxmind-geolite2-country = %{country_version}-%{country_release}%{?dist}
+Requires:       maxmind-geolite2-city = %{city_version}-%{city_release}%{?dist}
+Requires:       maxmind-geolite2-asn = %{asn_version}-%{asn_release}%{?dist}
 
 %description
 Metapackage that installs the MaxMind GeoLite2 Country, City and ASN databases.
 
 %package country
 Summary:        MaxMind GeoLite2 Country database
-Provides:       geolite2-country-data = %{version}-%{release}
+Version:        %{country_version}
+Release:        %{country_release}%{?dist}
+Provides:       geolite2-country-data = %{country_version}-%{country_release}
 Conflicts:      geolite2-country
 
 %description country
@@ -27,7 +29,9 @@ Free IP geolocation database containing country-level data, created by MaxMind.
 
 %package city
 Summary:        MaxMind GeoLite2 City database
-Provides:       geolite2-city-data = %{version}-%{release}
+Version:        %{city_version}
+Release:        %{city_release}%{?dist}
+Provides:       geolite2-city-data = %{city_version}-%{city_release}
 Conflicts:      geolite2-city
 
 %description city
@@ -35,7 +39,9 @@ Free IP geolocation database containing city-level data, created by MaxMind.
 
 %package asn
 Summary:        MaxMind GeoLite2 ASN database
-Provides:       geolite2-asn-data = %{version}-%{release}
+Version:        %{asn_version}
+Release:        %{asn_release}%{?dist}
+Provides:       geolite2-asn-data = %{asn_version}-%{asn_release}
 Conflicts:      geolite2-asn
 
 %description asn

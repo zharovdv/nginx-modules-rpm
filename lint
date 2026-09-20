@@ -18,6 +18,7 @@ shell_files=(
     generate-repository-index
     install-lint-tools
     lint
+    reuse-geolite2-rpms
     sign-rpms
     update-pins
     modules/geoip2/smoke-test.sh

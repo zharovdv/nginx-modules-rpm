@@ -26,6 +26,7 @@ spec_file="/workspace/packaging/maxmind-geolite2/maxmind-geolite2.spec"
 license_file="/workspace/packaging/maxmind-geolite2/GEOLITE2-LICENSE.txt"
 editions=(Country City ASN)
 release_dates=()
+archive_sha256s=()
 
 mkdir -p "$source_dir"
 install -m 0644 "$license_file" "${source_dir}/GEOLITE2-LICENSE.txt"
@@ -67,6 +68,7 @@ for edition in "${editions[@]}"; do
     install -m 0644 "$database_file" "${source_dir}/${database}.mmdb"
 
     archive_sha256="$(sha256sum "$archive" | cut -d' ' -f1)"
+    archive_sha256s+=("$archive_sha256")
     printf "%s release date: %s\n" "$database" "$database_release_date" >>"${work_dir}/source-info.txt"
     printf "%s archive SHA-256: %s\n" "$database" "$archive_sha256" >>"${work_dir}/source-info.txt"
 done
@@ -79,9 +81,16 @@ for database_release_date in "${release_dates[@]:1}"; do
 done
 
 package_version="${bundle_release_date:0:4}.${bundle_release_date:4:2}.${bundle_release_date:6:2}"
-bundle_revision="${release_dates[0]}.${release_dates[1]}.${release_dates[2]}"
+bundle_digest="$(printf "%s\n" "${archive_sha256s[@]}" | sha256sum | cut -d' ' -f1)"
+bundle_revision="${release_dates[0]}.${release_dates[1]}.${release_dates[2]}.${bundle_digest:0:12}"
 bundle_id="${package_version}-${bundle_revision}"
 rpm_release="1.${bundle_revision}"
+country_version="${release_dates[0]:0:4}.${release_dates[0]:4:2}.${release_dates[0]:6:2}"
+city_version="${release_dates[1]:0:4}.${release_dates[1]:4:2}.${release_dates[1]:6:2}"
+asn_version="${release_dates[2]:0:4}.${release_dates[2]:4:2}.${release_dates[2]:6:2}"
+country_release="1.${archive_sha256s[0]:0:12}"
+city_release="1.${archive_sha256s[1]:0:12}"
+asn_release="1.${archive_sha256s[2]:0:12}"
 artifact_dir="/dist/maxmind-geolite2/${bundle_id}"
 
 rm -rf "$artifact_dir"
@@ -92,6 +101,12 @@ rpmbuild \
     --define "_topdir ${top_dir}" \
     --define "geolite2_version ${package_version}" \
     --define "geolite2_release ${rpm_release}" \
+    --define "country_version ${country_version}" \
+    --define "country_release ${country_release}" \
+    --define "city_version ${city_version}" \
+    --define "city_release ${city_release}" \
+    --define "asn_version ${asn_version}" \
+    --define "asn_release ${asn_release}" \
     -bb "$spec_file"
 
 find "${top_dir}/RPMS/noarch" -maxdepth 1 -type f -name '*.rpm' -exec cp --target-directory "$artifact_dir" {} +
@@ -101,6 +116,9 @@ Package: maxmind-geolite2
 Bundle ID: ${bundle_id}
 Bundle version: ${package_version}
 RPM release: ${rpm_release}
+Country RPM: ${country_version}-${country_release}
+City RPM: ${city_version}-${city_release}
+ASN RPM: ${asn_version}-${asn_release}
 Bundle release date: ${bundle_release_date}
 Source: MaxMind official GeoLite2 download service
 Source URL: ${MAXMIND_DOWNLOAD_BASE_URL}

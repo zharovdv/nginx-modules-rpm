@@ -34,20 +34,27 @@ The discovery environment can read the free databases but cannot sign or publish
 
 The workflow checks MaxMind once a day and can also be started manually through **Actions → Build, sign and release GeoLite2 databases → Run workflow**. No version input is required. If the current bundle is already published, the workflow exits before building and does not request release approval.
 
-When at least one database changes, the discovery job builds and uploads unsigned RPMs. The protected `release` job then waits for approval. After approval, it downloads those exact artifacts, signs them and publishes the release.
+When at least one database changes, the discovery job builds the current bundle. It then replaces unchanged data RPMs with the byte-for-byte identical signed RPMs from the previous release. The protected `release` job waits for approval, verifies the bundle, signs only new RPMs and publishes it.
 
-MaxMind can publish the databases on different days. The RPM version uses the newest date, while the RPM release and GitHub tag include all three dates in Country, City and ASN order. This prevents a collision when only one database changes without changing the newest date. Individual dates and source hashes are recorded in `build-info.txt`.
+Each data package has an independent version based only on that database's release date. Its RPM release also contains a prefix of that database archive's SHA-256, so corrected content published under the same date still produces a new NEVRA. For example:
+
+- `maxmind-geolite2-country-2026.09.18-1.<hash>.el9.noarch`;
+- `maxmind-geolite2-city-2026.09.18-1.<hash>.el9.noarch`;
+- `maxmind-geolite2-asn-2026.09.19-1.<hash>.el9.noarch`.
+
+Only the `maxmind-geolite2` metapackage and the GitHub release tag describe the complete three-database bundle. Consequently, when only ASN changes, DNF upgrades ASN and the small metapackage; Country and City retain their existing NEVRA and exact signed RPM bytes. Individual dates and source hashes are recorded in `build-info.txt`.
 
 The workflow:
 
 1. checks all three official release dates without consuming a database download when no update exists;
 2. downloads all three official archives and their SHA-256 files over HTTPS when an update exists;
-3. verifies every archive, validates every MMDB file and builds unsigned RPMs;
-4. pauses at the protected `release` environment;
-5. signs three data RPMs plus the metapackage after approval;
-6. publishes checksums, source hashes, license notice and build provenance;
-7. removes superseded GeoLite2 releases;
-8. rebuilds and deploys the signed DNF repository.
+3. verifies every archive, validates every MMDB file and builds the current RPM set;
+4. reuses exact previously signed RPMs for databases whose NEVRA did not change;
+5. pauses at the protected `release` environment;
+6. signs the new data RPMs and metapackage after approval;
+7. publishes checksums, source hashes, license notice and build provenance;
+8. removes superseded GeoLite2 releases;
+9. rebuilds and deploys the signed DNF repository.
 
 If any step before publication fails, no existing database release is removed.
 

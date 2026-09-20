@@ -70,6 +70,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Download previously published database RPMs
+        if: steps.release.outputs.update_available == 'true'
+        env:
+          GH_TOKEN: "${{ github.token }}"
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p previous-geolite2-rpms
+          mapfile -t previous_tags < <(
+              gh release list --limit 1000 --json tagName \
+                  --jq '.[] | select(.tagName | startswith("maxmind-geolite2-")) | .tagName'
+          )
+
+          if [[ "${#previous_tags[@]}" -gt 0 ]]; then
+              gh release download "${previous_tags[0]}" \
+                  --pattern 'maxmind-geolite2-*.rpm' \
+                  --dir previous-geolite2-rpms
+          fi
+
       - name: Download, verify and build unsigned database RPMs
         if: steps.release.outputs.update_available == 'true'
         env:
@@ -88,6 +107,28 @@ jobs:
             --env "HOST_GID=$(id -g)" \
             --entrypoint /usr/local/bin/build-maxmind-geolite2-rpms \
             "$BUILDER_IMAGE"
+
+      - name: Reuse unchanged signed database RPMs
+        if: steps.release.outputs.update_available == 'true'
+        run: |
+          set -Eeuo pipefail
+
+          artifact_dir="$(find dist/maxmind-geolite2 -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          [[ -n "$artifact_dir" ]]
+
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            --volume "${PWD}/dist:/dist" \
+            --volume "${PWD}/previous-geolite2-rpms:/previous-geolite2-rpms:ro" \
+            --env "RPM_DIRECTORY=/${artifact_dir}" \
+            --env "PREVIOUS_RPM_DIRECTORY=/previous-geolite2-rpms" \
+            --entrypoint /usr/local/bin/reuse-maxmind-geolite2-rpms \
+            "$BUILDER_IMAGE"
+
+          (
+              cd "$artifact_dir"
+              sha256sum ./*.rpm build-info.txt >SHA256SUMS
+          )
 
       - name: Prepare unsigned bundle
         id: prepare
@@ -190,6 +231,11 @@ jobs:
           RPM_GPG_KEY_ID: "${{ vars.RPM_GPG_KEY_ID }}"
         run: |
           set -Eeuo pipefail
+
+          (
+              cd "$ARTIFACT_DIR"
+              sha256sum --check SHA256SUMS
+          )
 
           docker run --rm \
             --platform "$DOCKER_PLATFORM" \
